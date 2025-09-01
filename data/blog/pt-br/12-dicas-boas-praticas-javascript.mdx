@@ -1,0 +1,251 @@
+---
+title: '12 dicas de boas práticas em Javascript'
+date: '2020-12-28'
+language: pt-br
+tags: ['javascript', 'best-practices', 'code-quality', 'clean-code', 'web-development']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Boas práticas são importantíssimas para qualquer linguagem ou tecnologia que for usada. Afinal, elas permitem que o código fique mais limpo, legível e de fácil manutenção.'
+images: ['/static/images/javascript-tips.png']
+---
+
+Boas práticas são importantíssimas para qualquer linguagem ou tecnologia que for usada. Afinal, elas permitem que o código fique mais limpo, legível e de fácil manutenção.
+
+Códigos bagunçados e com algumas práticas não recomendadas são facilmente quebrados, costumam acompanhar bugs e atrapalharam todo o time num ambiente de desenvolvimento. Por isso, é importantíssimo se acostumar desde o início com boas práticas que vão otimizar seu código e fazer a diferença em qualquer lugar na sua carreira.
+
+Dito isso, separei 12 dicas de boas práticas em Javascript que podem otimizar seu código e deixá-lo mais limpo. Então, vamos listá-las.
+
+## Não declare variáveis com var
+
+No Javascript temos 3 maneiras de declarar variáveis: Usando let, const, ou var. Antes da atualização da linguagem em 2015 (com a chegada do [ECMAScript 6](https://www.w3schools.com/js/js_es6.asp)) que a deixou muito mais consistente, sua única maneira de declaração era o var. Mas esse método tinha muitos problemas relacionados a vazamento de escopo e comportamentos estranhos, como poder ser chamado antes mesmo de ser declarado. Por isso, o var é considerado um método de declaração de variáveis ultrapassado.
+
+É importante entender o var até mesmo para manutenção de códigos antigos. Mas em códigos novos, não é muito recomendado usá-lo.
+
+```javascript
+// ❌ Evite
+var nome = "Lucas";
+
+// ✅ Prefira
+let nome = "Lucas";
+const API_URL = "https://api.exemplo.com";
+```
+
+## Use constantes sempre que possível
+
+"Ah, não tô usando var, então vou sempre usar let?" Não! O let deve ser declarado exclusivamente para variáveis que serão modificadas depois. Para evitar bugs e deixar seu código mais consistente, é crucial utilizar const em TODA variável que não for modificada depois. Procure sempre deixar bem claro o que cada coisa significa e qual deve ser seu comportamento.
+
+```javascript
+// ❌ Evite
+let name = "Lucas";
+let age = 25;
+
+// ✅ Prefira
+const name = "Lucas";
+const age = 25;
+let counter = 0; // apenas se for modificada depois
+```
+
+## SEMPRE use "==="
+
+Em outras linguagens, é comum usar o comparador com dois sinais de igual sem problema, mas em Javascript isso não é recomendado. Até porque existe o comparador "===", que permite uma comparação mais exata. No Javascript, o comparador com dois sinais de igual compara sem se importar com o tipo do dado, como podemos ver no exemplo abaixo.
+
+```javascript
+// ❌ Evite
+if (5 == "5") {
+  // true - mas tipos diferentes!
+}
+
+// ✅ Prefira
+if (5 === "5") {
+  // false - comparação rigorosa
+}
+```
+
+## Dê um valor às suas variáveis
+
+Muitas pessoas costumam inicializar uma variável vazia, o que o Javascript interpreta como undefined. Mas isso é uma péssima prática. A recomendação é que variáveis sempre sejam inicializadas com algum valor.
+
+```javascript
+// ❌ Evite
+let users;
+let isActive;
+
+// ✅ Prefira
+let users = [];
+let isActive = false;
+const defaultConfig = {};
+```
+
+## Leve o ponto e vírgula a sério!
+
+O ponto e vírgula é um assunto que pode causar até discussões sobre sua necessidade. Mas é importantíssimo sempre adicionar no final de cada declaração de variáveis, funções ou coisas do tipo.
+
+Até porque, ao rodar seu código, o Javascript sempre adiciona um ponto e vírgula automaticamente. Então isso pode causar alguns problemas e bugs, caso o conceito não seja usado sempre.
+
+Apenas… evite.
+
+```javascript
+// ❌ Evite
+const name = "Lucas"
+const getData = () => {
+  return "data"
+}
+
+// ✅ Prefira
+const name = "Lucas";
+const getData = () => {
+  return "data";
+};
+```
+
+## Utilize operador ternário sempre que possível
+
+Quando possível, não use o if para verificações simples de condições. Para melhor leitura do seu código e para deixá-lo mais enxuto, tente deixar dessa maneira às vezes, utilizando o operador ternário:
+
+```javascript
+// ❌ Evite (para casos simples)
+let message;
+if (user.isActive) {
+  message = "Usuário ativo";
+} else {
+  message = "Usuário inativo";
+}
+
+// ✅ Prefira
+const message = user.isActive ? "Usuário ativo" : "Usuário inativo";
+```
+
+## Prefira o For Loop ao invés do forEach às vezes
+
+o For mais "tradicional" costuma permitir mais liberdade para controlar o que vai acontecer no loop e, por isso, é mais recomendado. Além disso, o forEach costuma ser um pouco mais lento. No quesito performance, prefira sempre o For Loop.
+
+```javascript
+// Para performance crítica, prefira:
+for (let i = 0; i < array.length; i++) {
+  // processamento
+}
+
+// Para legibilidade, forEach é aceitável:
+array.forEach(item => {
+  // processamento
+});
+```
+
+## Evite MUITO o "new"
+
+Com exceção de casos bem específicos, a recomendação é não usar o new para criar um objeto, um array ou qualquer coisa do tipo. Essa maneira de declaração deixa a execução do código mais lento.
+
+```javascript
+// ❌ Evite
+const obj = new Object();
+const arr = new Array();
+const str = new String("hello");
+
+// ✅ Prefira
+const obj = {};
+const arr = [];
+const str = "hello";
+```
+
+## Acostume-se a usar funções com expressões
+
+Mais um costume recente do Javascript que chegou junto com a nova atualização, o uso de funções com expressões é mais recomendada por motivos de evitar bug no código. Funções declaradas são sempre "içadas" ao topo do código, podendo assim ser chamada antes mesmo de ser declarada. A menos que encontre uma necessidade clara nisso, passe a declarar suas funções dessa maneira.
+
+```javascript
+// ❌ Evite (function hoisting pode causar confusão)
+function getData() {
+  return "data";
+}
+
+// ✅ Prefira
+const getData = () => {
+  return "data";
+};
+
+// Ou
+const getData = function() {
+  return "data";
+};
+```
+
+## Funções só devem ter UM papel
+
+Principalmente no início, é muito comum cair na armadilha de fazer um código que tem uma função com várias responsabilidades. É importantíssimo que suas funções sejam abstraídas ao máximo para que tudo fique mais claro e de melhor manutenção (aliás, esse conceito faz parte de [um dos princípios SOLID](https://www.digitalocean.com/community/conceptual_articles/s-o-l-i-d-the-first-five-principles-of-object-oriented-design)).
+
+```javascript
+// ❌ Evite - função com múltiplas responsabilidades
+const processUser = (user) => {
+  // validação
+  if (!user.email) throw new Error("Email required");
+  
+  // formatação
+  user.name = user.name.toUpperCase();
+  
+  // salvamento
+  database.save(user);
+  
+  // envio de email
+  emailService.send(user.email);
+};
+
+// ✅ Prefira - funções com responsabilidade única
+const validateUser = (user) => {
+  if (!user.email) throw new Error("Email required");
+};
+
+const formatUser = (user) => {
+  return { ...user, name: user.name.toUpperCase() };
+};
+
+const saveUser = (user) => {
+  return database.save(user);
+};
+```
+
+## Default parameters em funções
+
+Ainda falando de função, por motivos de deixar o código menos suscetível a erros, é uma boa prática sempre declarar um valor dentro do parâmetro por padrão.
+
+Assim, sempre que a função for chamada ela não vai quebrar, independentemente da maneira que é chamada.
+
+```javascript
+// ❌ Evite
+const greet = (name) => {
+  return `Hello, ${name}`;
+};
+
+// ✅ Prefira
+const greet = (name = "Guest") => {
+  return `Hello, ${name}`;
+};
+
+// Uso
+greet(); // "Hello, Guest"
+greet("Lucas"); // "Hello, Lucas"
+```
+
+## Teste unitários sempre!
+
+Quando se é desenvolvedor, muita das vezes não damos importância para os testes do jeito que eles merecem. Mas fato é que o ser humano é falho, e testar manualmente se uma aplicação funciona é uma PÉSSIMA prática.
+
+Por isso, é sempre crucial fazer testes unitários em cima do código, de modo a evitar bugs e testar de maneira automatizada sempre que for feita alguma modificação no mesmo. Assim, você economiza tempo, foca melhor no seu processo de desenvolvimento, garante a qualidade da aplicação e ainda por cima aprende sobre mais um conceito requisitadíssimo no mercado.
+
+Para quem não sabe por onde começar com testes unitários em Javascript ou até mesmo quer aprimorar seus conhecimentos, segue alguns links úteis:
+
+- [Como criar unit tests](https://www.luiztools.com.br/post/tdd-como-criar-unit-tests-em-node-js-com-tape/)
+- [How to start unit testing](https://www.freecodecamp.org/news/how-to-start-unit-testing-javascript/)
+
+```javascript
+// Exemplo de teste simples com Jest
+const sum = (a, b) => a + b;
+
+test('soma dois números', () => {
+  expect(sum(2, 3)).toBe(5);
+});
+```
+
+---
+
+E aí, gostaram das dicas? Foram úteis para você? Algo que não sabia da importância? Alguma sugestão de boa prática? Deixe seu comentário! Vamos compartilhar conhecimento!
+
+

@@ -1,0 +1,166 @@
+---
+title: 'Escrevendo e publicando seu primeiro pacote em Python'
+date: '2024-02-27'
+language: pt-br
+tags: ['python', 'package', 'pypi', 'open-source', 'tutorial']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Tentando criar sua primeira biblioteca pública e tendo dificuldades? Vem comigo que vou te explicar!'
+images: ['/static/images/python-package.png']
+---
+
+Recentemente, escrevi um pacote em Python que analisa alguns dados de uma url e retorna uma relação com esses dados:
+
+```json
+{ "load_time":"488.837125ms","http_requests_count":3,"page_size":53 }
+```
+
+Esses são: Tempo de carregamento, contagem de requisições HTTP externas que são feitas dentro da página e o tamanho da página, em Bytes.
+
+**Você pode conferir e usar o pacote [aqui](https://github.com/olucasandrade/py-url-analyzer)**.
+
+Mas eu confesso que sabia muito pouco sobre o processo de publicação de uma biblioteca em Python, e tive dificuldade em entender exatamente o passo a passo procurando umas referências nas documentações.
+
+Mas depois de um tempinho… Consegui! O pacote está publicado e está no Pypi, pronto pra ser instalado por qualquer um com o pip install. Mas como é o processo de publicação? Isso é o que vamos ver nesse artigo!
+
+## Mas o que é esse tal de PyPi?
+
+O Python Package Index (PyPI) é um repositório online que serve como um ponto central para a distribuição de pacotes Python. Ele abriga uma ampla variedade de bibliotecas, frameworks e ferramentas desenvolvidas pela comunidade Python. Os desenvolvedores podem acessar o PyPI para encontrar e instalar pacotes prontos para uso em seus projetos, facilitando significativamente o processo de desenvolvimento de software em Python. Os pacotes que estão no PyPi são baixados justamente usando o `pip`.
+
+## E como funciona o pip?
+
+O pip é a ferramenta padrão de gerenciamento de pacotes para Python, e sua função principal é simplificar a instalação e gerenciamento de pacotes Python. Funciona de maneira simples: os usuários podem usar o pip através da linha de comando do terminal ou prompt de comando do sistema operacional. Comandos como `pip install` seguido do nome do pacote instalam o pacote especificado. O pip então automaticamente baixa o pacote do PyPI (ou de outros repositórios especificados) e o instala no ambiente Python local. Além disso, o pip pode ser usado para desinstalar pacotes (`pip uninstall`), listar pacotes instalados (`pip list`), atualizar pacotes para as versões mais recentes, entre outras funcionalidades, simplificando o processo de gerenciamento de dependências em projetos Python.
+
+## Publicando seu pacote
+
+### #1: Criando o pacote
+
+Antes de tudo, claro, você precisa ter seu pacote no esquema pra ser usado por outros projetos. Comecei criando uma pasta `py-url-analyzer`. Nela, após criar um ambiente virtual e instalar as bibliotecas necessárias (não é o foco do artigo, então vou deixar [esse artigo externo sobre](https://docs.python.org/pt-br/3/library/venv.html)), eu criei um `requirements.txt` com o seguinte comando:
+
+```bash
+pip freeze > requirements.txt
+```
+
+Com isso, vamos ter um arquivo definindo todas as bibliotecas necessárias para o projeto. Isso vai ser útil para quem acessar o projeto e também para o setup.
+
+A partir daí, criei uma pasta `url_analyzer` com um arquivo `__init__.py`, que vai conter o método do pacote. Logo, por hora, o projeto ficou assim:
+
+```
+├── requirements.txt
+├── LICENSE
+├── .gitignore
+├── README.md
+├── test_url_analyzer.py
+├── url_analyzer
+│   └── __init__.py
+```
+
+Lembrando que seguir essa arquitetura de pastas e arquivos é completamente opcional. Como o Python é bem flexível, você pode organizar da maneira que achar melhor.
+
+### #2: Configurando o pacote
+
+Para configurar o pacote de modo que seja possível publicar no PyPi futuramente, precisamos criar um arquivo `setup.py`, que vai conter as informações necessárias para o nosso pacote ser algo a ser publicado.
+
+Apesar de existir um template, não possui uma maneira de gerar um por padrão, como um `package.json`, por exemplo. Então é necessário ser preenchido diretamente. Mas, de maneira geral, são informações simples. Essa é a documentação do padrão do `setup.py`, e esse é meu arquivo que pode ser útil pra se basear:
+
+```python
+from setuptools import setup, find_packages
+
+setup(
+    name='py-url-analyzer',
+    version='0.0.2',
+    packages=find_packages(),
+    author='Lucas Andrade',
+    author_email='lafdesouza2002@gmail.com',
+    description='A simple URL analyzer',
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
+    url='https://github.com/olucasandrade/py-url-analyzer',
+    install_requires=[
+        'beautifulsoup4',
+        'certifi',
+        'charset-normalizer',
+        'idna',
+        'requests',
+        'soupsieve',
+        'urllib3',
+    ],
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'License :: OSI Approved :: MIT License',
+        'Operating System :: OS Independent',
+    ],
+)
+```
+
+A partir daqui, pra gerar o pacote de distribuição do seu projeto Python, você precisa executar o seguinte comando no terminal
+
+```bash
+python setup.py sdist
+```
+
+Este comando irá criar um arquivo compactado (.tar.gz ou .zip) que contém todos os arquivos necessários para instalar o seu pacote em outros sistemas.
+
+### #3: Criando uma conta e um token no Pypi
+
+Agora, precisamos acessar o site do PyPI (https://pypi.org/) e criar uma conta (ou fazer login, caso já tenha). Em seguida, siga estes passos para criar um token. Isso vai ser necessário para a publicação:
+
+- Acesse https://pypi.org/manage/account/token/
+- Insira um nome para o token.
+- Clique no botão "Create Token".
+- Copie o token gerado, pois você precisará dele em breve.
+
+### #4: Subindo o pacote no Pypi
+
+Pra subir o pacote, vamos usar a lib `twine`, que é uma ferramenta open-source para publicar pacotes Python no PyPI.
+
+Primeiro, vamos intalar o `twine`:
+
+```bash
+pip install twine
+```
+
+Agora navegue até a pasta do seu projeto no terminal e execute o seguinte comando:
+
+```bash
+twine upload dist/*
+```
+
+O Twine solicitará seu nome de usuário e senha do PyPI. Em vez disso, você pode usar o token que gerou anteriormente:
+
+- Digite `__token__` no prompt de nome de usuário.
+- Digite seu token no prompt de senha.
+
+Com isso, o upload deve ser bem sucedido e você pode verificar ou acessando o projeto diretamente com:
+
+```
+https://pypi.org/project/<nome-do-projeto>/
+```
+
+Ou simplesmente procurando seu projeto em https://pypi.org/manage/projects/.
+
+## Dicas
+
+Pronto! Com isso, seu pacote está pronto pra ser instalado em qualquer projeto externo que seja.
+
+### Dicas importantes:
+
+- **Certifique-se de que o seu código está limpo e bem documentado antes de publicar**: Antes de publicar seu pacote, é crucial garantir que seu código esteja organizado, legível e bem documentado. Certifique-se de seguir as melhores práticas de codificação e comentar o código de forma clara e concisa. Isso não apenas facilitará a compreensão do seu código por outros desenvolvedores, mas também ajudará na manutenção e na identificação de possíveis problemas.
+
+- **Use uma versão semântica para o seu pacote**: Adote uma abordagem de versionamento semântico ao atribuir versões ao seu pacote. Isso significa que você deve seguir um padrão consistente de incremento de versões com base nas mudanças feitas no seu código. Recomenda-se o formato "MAJOR.MINOR.PATCH", onde "MAJOR" é incrementado para mudanças incompatíveis, "MINOR" para adições compatíveis com versões anteriores e "PATCH" para correções de bugs compatíveis com versões anteriores.
+
+- **Inclua um README.md com informações sobre o seu pacote, como instalação, uso e exemplos**: Um arquivo README.md é essencial para fornecer informações detalhadas sobre o seu pacote para os usuários. Certifique-se de incluir instruções claras sobre como instalar o seu pacote usando pip ou outras ferramentas de gerenciamento de pacotes, como usar suas funcionalidades e exemplos de código para ajudar os usuários a começar.
+
+- **Teste a publicação primeiramente no TestPyPi**: Antes de publicar seu pacote no PyPI oficial, é altamente recomendável testar a publicação no TestPyPI. O TestPyPI é um ambiente de teste para pacotes Python, onde você pode simular o processo de publicação sem afetar o repositório principal. Isso permite que você verifique se tudo está configurado corretamente e se não há problemas de empacotamento ou instalação antes de fazer a publicação oficial. O processo é o mesmo do PyPi, com a única diferença sendo o upload especificando o repositório:
+
+```bash
+twine upload --repository testpypi dist/*
+```
+
+É também preciso criar uma conta no https://test.pypi.org/.
+
+---
+
+Espero que tenha gostado e te vejo no próximo artigo! 👋
+
+

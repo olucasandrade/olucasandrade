@@ -1,0 +1,151 @@
+---
+title: '10 dos melhores serviços da AWS em 2023'
+date: '2023-01-18'
+language: pt-br
+tags: ['aws', 'cloud', 'infrastructure', 'devops', 'backend']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Em 2022, visitei o Transamerica Expo Center para acompanhar de perto a AWS Summit, em São Paulo. Por lá, conheci diversas pessoas, conversei bastante, e aprendi sobre diversas ferramentas AWS, pelo qual a maioria eu não conhecia tanto.'
+images: ['/static/images/aws-services.png']
+---
+
+Em 2022, visitei o Transamerica Expo Center para acompanhar de perto a [AWS Summit](https://aws.amazon.com/pt/events/summits/sao-paulo/), em São Paulo. Por lá, conheci diversas pessoas, conversei bastante, e aprendi sobre diversas ferramentas AWS, pelo qual a maioria eu não conhecia tanto.
+
+A AWS, resumidamente, é uma plataforma de nuvem que oferece diversos serviços de acordo com a necessidade de seu contratante. [Segundo a própria AWS](https://aws.amazon.com/), hoje a plataforma conta com mais de 200 serviços, com diferentes preços e planos de acordo com o tamanho do cliente ou da empresa (eu mesmo uso a maioria dos serviços da lista de maneira gratuita em alguns projetos pessoais).
+
+O grande diferencial de usar a AWS, além de ser a maior plataforma de nuvem do mundo, é justamente o fato de ser em nuvem. Isso permite uma maior flexibilidade, escalabilidade, redução de custos (muuuito mais barato usar máquinas remotas já prontas para aquele intuito) e principalmente, segurança (devido a solidez da infraestrutura AWS).
+
+Mas, num mundo de mais de 200 serviços AWS, quais os principais e mais úteis para uma empresa/projeto? Separei 10 para comentar um pouco sobre. Então, sem me alongar mais, vamos a lista!
+
+## 1 — Amazon EC2
+
+O EC2, ou *Elastic Compute Cloud*, oferece uma capacidade computacional redimensionável na própria nuvem da Amazon. Com isso, quem usa do produto pode tanto hospedar algo na Amazon, como um site, como também pode executar um trabalho que um computador comum não consegue fazer, criando uma máquina virtual na nuvem.
+
+Com ele, podemos definir o processador, a memória, rede, o sistema operacional e colocar a máquina virtual entre 81 zonas de disponibilidade em todo o mundo.
+
+### Quando utilizar o EC2?
+
+- Projetos que precisam ser hospedados com alta disponibilidade;
+- Projetos de Machine Learning com alta carga e necessidade de alta capacidade computacional;
+- Cargas de trabalho SAP;
+
+## 2 — Amazon S3
+
+Pessoalmente, é o que mais utilizo. O *Amazon Simple Storage Service* é um serviço de armazenamento de arquivos, com **altíssima** disponibilidade, escalabilidade e segurança.
+
+O S3 é um serviço bem revolucionário, pois antes dele não se via outros caminhos tão eficientes em unir segurança e escalabilidade, principalmente pensando em quantidade de arquivos armazenados. O S3 virou completamente o jogo. Com ele, conseguimos armazenar até 5TB. Pra melhorar, com um custo extremamente acessível (cerca de 5 centavos por GB).
+
+### Quando utilizar o S3?
+
+- Aplicações com funcionalidades de upload de usuário;
+- Aplicações que precisam servir arquivos estáticos CSS/Javascript, como um projeto frontend;
+- Projetos onde é preciso guardar arquivos de backup e logs, de curto ou longo prazo.
+
+## 3 — AWS Lambda
+
+A AWS Lambda é um serviço de de computação [*serverless*](https://www.redhat.com/pt-br/topics/cloud-native-apps/what-is-serverless) onde, muuuito resumidamente, o usuário pode executar blocos de código em nuvem. Mas na real, o serviço pode ser utilizado com infinitos intuitos.
+
+A Lambda é orientada a eventos, logo, não é recomendado que a use para "hospedar" aplicações web, e sim para outros casos. Também é bem barato (eu mesmo nunca precisei pagar pelo seu uso).
+
+### Quando utilizar o AWS Lambda?
+
+- Hospedar uma função externa que vai ser chamada pelo backend de uma aplicação e exige alta capacidade computacional, como uma leitura de grande quantidade de dados;
+- Um bloco de código que leia algo de maneira assíncrona e não precise tomar capacidade computacional da sua aplicação, como registro de logs e eventos, ou conversão de tipos após o upload.
+
+## 4— Amazon Cloudwatch
+
+O Cloudwatch é um serviço pelo qual sua utilidade é diretamente proporcional a sua complexidade. Com uso simples, podemos guardar e monitorar logs relacionados a outros serviços da própria AWS, além de criar regras para eventos customizados que podem disparar outras ações dentro da própria AWS.
+
+As opções são infinitas. E claro, como tudo na AWS, podemos customizar os dados gerenciando nossas instâncias da maneira que acharmos melhor.
+
+### Quando utilizar o Amazon Cloudwatch?
+
+- Análise de logs de uma Lambda Function;
+- Análise do uso da CPU de uma instância EC2;
+- Uso de alarmes customizados em uma aplicação comum.
+
+## 5 — Amazon Cognito
+
+Confesso que fico triste pelo Cognito não ser tão conhecido quanto merece. Conheci ele na AWS Summit e o produto, resumidamente, gerencia por você o acesso de usuários e autenticação da sua aplicação. Mas é utilizado apenas em dispositivos móveis. Então, desenvolvedor web… dessa vez não estamos falando de você 😅
+
+O Cognito cuida de (quase) toda a parte de segurança por você. Com ele, podemos gerenciar o cadastramento, login e controle de acesso de maneira simples. Além disso, o Cognito possui suporte ao login social e provedores SSO. Possui 50.000 usuários ativos gratuitos por mês, então também é excelente para projetos pessoais, caso não queira gastar na plataforma.
+
+### Quando utilizar o Amazon Cognito?
+
+- Controle do acesso de usuários, autenticação e cadastro em um aplicativo móvel, sem precisar se preocupar com um back-end inteiro por trás.
+
+## 6 — Amazon ElastiCache
+
+Vou deixar como resumo a própria definição da página do serviço na AWS, que acredito que já explica perfeitamente:
+
+> O Amazon ElastiCache é um serviço de cache na memória totalmente gerenciado que oferece suporte a casos de uso flexíveis e em tempo real. Você pode usar o ElastiCache para armazenamento em cache, o que acelera a performance de aplicações e bancos de dados, ou como um armazenamento de dados principal para casos de uso que não exigem durabilidade, como armazenamentos de sessões, placares de jogos, streaming e análises. O ElastiCache é compatível com o Redis e o Memcached.
+
+Apesar da complexidade, possui cerca de 750 horas no plano gratuito, e para usar em outros planos, é preciso solicitar uma cotação.
+
+### Quando utilizar o Amazon ElastiCache?
+
+- Armazenamento de dados em cache para casos em que não há problema os dados estarem um pouco obsoletos;
+- Armazenamento de dados em cache para menor latência da entrega dos dados e da quantidade de requisições para o banco de dados;
+- Placares de jogos, em união com o Redis.
+
+## 7— AWS Auto Scaling
+
+O Auto Scaling é um serviço que, por conta própria, monitora seus projetos e redimensiona sua capacidade computacional. É útil demais pois mantém o desempenho do app constante independente da escalabilidade, além de manter o custo baixo, perto do mínimo possível.
+
+Como tudo na AWS, o serviço é muito customizável. Podemos criar soluções de escalabilidade da maneira que quisermos, priorizando disponibilidade, custos ou um equilíbrio ente os dois.
+
+### Quando utilizar o AWS Auto Scaling?
+
+- Apps com um potencial alto de escalabilidade;
+- Apps com recursos variáveis (ex: um e-commerce com tráfego muito variável);
+
+## 8 — Amazon RDS
+
+O Amazon RDS, ou Relational Database Service, é o serviço de banco de dados relacionais da Amazon. Nele, além de configurar o banco em uma nuvem segura e escalável, o serviço automatiza tarefas chatas de administração, como backups e configurações mais avançadas.
+
+Além disso, o Amazon RDS é redimensionável e também otimiza memória da sua instância.
+
+### Quando utilizar o Amazon RDS?
+
+- Bancos de dados relacionais com maior complexidade administrativa;
+- Bancos de dados relacionais variáveis, que precisem ser redimensionados ou reconfigurados constantemente;
+
+### Bancos relacionais disponíveis com o Amazon RDS
+
+- [Amazon Aurora](https://aws.amazon.com/pt/rds/aurora/);
+- [MariaDB](https://aws.amazon.com/pt/rds/mariadb/);
+- [MySQL](https://aws.amazon.com/pt/rds/mysql/);
+- [Microsoft SQL Server](https://aws.amazon.com/pt/rds/sqlserver/);
+- [Oracle](https://aws.amazon.com/pt/rds/oracle/);
+- [PostgreSQL](https://aws.amazon.com/pt/rds/postgresql/);
+
+## 9 — Amazon DynamoDB
+
+Já o DynamoDB é um serviço de Banco de Dados NoSQL da Amazon, também em cloud, sem servidor e totalmente gerenciado.
+
+Com ele, temos funcionalidades de armazenamento em cache, proteção com criptografia em repouso e **flexibilidade para performance abaixo de 10 milissegundos em qualquer escala** (!!!)
+
+Um dos meus favoritos da lista também, e pretendo usar bem mais.
+
+### Quando utilizar o Amazon DynamoDB?
+
+- Bancos de dados não-relacionais (chave-valor) que necessitem de maior latência;
+
+## 10— Amazon VPC
+
+O Amazon VPC, ou Virtual Private Cloud, é o principal serviço relacionado a redes dentro da gama de produtos da Amazon. Com ele, é possível provisionar e controlar completamente um ambiente de rede virtual. Desde rastrear o tráfego até controlar o próprio intervalo de endereços IP, tudo dentro do serviço.
+
+Usado pela Atlassian, Samsung e Tableau, considero ser o mais complexo da lista, pois exige um conhecimento maior sobre redes como um todo para um uso realmente seguro e efetivo.
+
+### Quando utilizar o Amazon VPC?
+
+- Aplicações onde seja preciso criar regras em conexões;
+- Criação e gestão de uma rede rastreável entre seus próprios serviços da AWS;
+
+---
+
+Quando se vê por fora, a ideia que se tem sobre os serviços da AWS é que são muito complexos ou que não possuem muita utilidade direta para Devs, coisas do tipo. Mas as opções são infinitas, e tem espaço pra todo mundo explorar a AWS! Desde o mais iniciante ao avançado.
+
+E aí, curtiu o artigo? Tem algum serviço na lista que você utilize? Algo a complementar? Sugestões? Ideias de outros serviços? Contribua nos comentários! Agregar conhecimento é sempre bem vindo e útil!
+
+

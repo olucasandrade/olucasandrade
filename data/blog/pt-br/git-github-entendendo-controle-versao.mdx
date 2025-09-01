@@ -1,0 +1,59 @@
+---
+title: 'Git e Github: Entendendo como funciona o controle de versão'
+date: '2020-09-20'
+language: pt-br
+tags: ['git', 'github', 'version-control', 'programming', 'beginners']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Muita gente inicia a vida na programação aprendendo diretamente o código em si, salvando seus projetos na máquina local sem sentir necessidade de colocar em seu portfólio ou facilitar seus projetos compartilhados.'
+images: ['/static/images/git-github.png']
+---
+
+Muita gente inicia a vida na programação aprendendo diretamente o código em si, salvando seus projetos na máquina local sem sentir necessidade de colocar em seu portfólio ou facilitar seus projetos compartilhados. Essa prática acaba sendo mais comum do que muitos imaginam, e é muito importante pra qualquer um que deseja entrar no mundo da programação (ou até mesmo em outras áreas), entender sistemas de controle de versão em detalhes.
+
+Para entender o que é Git e Github, primeiro precisamos entender o que é versionamento de código.
+
+Imagine que você tem um projeto para fazer com mais 3 pessoas. Cada pessoa é responsável por uma parte e vocês não tem a mesma disponibilidade de tempo, ou seja, cada um faz em certo horário do dia. Mas o código é um só, ou seja, um programador depende do código do outro para evitar incompatibilidades no projeto. Imagina o trabalho que seria enviar arquivos em zip toda vez que fizesse uma parte do projeto, forçando o outro programador a excluir e baixar várias vezes o mesmo código com funcionalidades diferentes? Isso no mercado de trabalho é inviável. Por isso o controle de versão existe.
+
+Em um sistema de controle de versão, os arquivos ficam hospedados em um repositório remoto, podendo sofrer modificações a qualquer momento sem muita dificuldade. Toda vez que é feita alguma alteração e enviada pro repositório remoto, todos os outros participantes do projeto podem pegar esse código automaticamente, ou até mesmo trabalharem ao mesmo tempo, salvando inclusive o histórico de alterações feitas nesse projeto, evitando assim um trabalho MUITO maior.
+
+Dito isso, quando se fala em versionamento de código, é impossível não citar o [Git](https://git-scm.com/). Afinal, estamos falando do sistema de versionamento mais usado pelos desenvolvedores de Software. O git é um sistema open-source, desenvolvido por [Linus Torvalds](https://www.techtudo.com.br/tudo-sobre/linus-torvalds.html), baseado em um conjunto de comandos que vão te ajudar a trocar as modificações feitas com o repositório remoto, e vice versa.
+
+Após fazer o download do git [aqui](https://git-scm.com/downloads), veja alguns exemplos dos seus principais comandos que são usados no git a partir do terminal e o que significam:
+
+- **git init**: Comando usado para iniciar seu repositório remoto, criando uma pasta .git, assim permitindo o seu versionamento
+- **git status**: Comando usado para verificar as alterações que foram feitas no arquivo (se houver alguma alteração, claro).
+- **git diff**: Comando usado para analisar mais a fundo as diferenças que foram feitas em determinado arquivo.
+- **git add &lt;nome-dos-arquivos/diretórios&gt;**: Como o nome já diz, o comando é usado pra adicionar alterações feitas ao índice, que é como se fosse uma maneira de dizer que determinado arquivo está "preparado" para ser enviado para o repositório remoto.
+- **git commit -m "Algum comentário"**: Esse comando confirma todas as alterações que foram enviadas ao índice (ou seja, que foram adicionadas com o git add), adicionando um comentário que normalmente serve para especificar o que exatamente você está editando, assim deixando o seu trabalho mais organizado.
+- **git log**: Mostra todo o histórico de alterações (commits) desde que o arquivo .git foi criado. Por essas e outras o comentário no commit é importante, pois o git log vai mostrar os comentários, juntamente com a data em que eles foram "commitados".
+- **git push**: Comando usado para enviar sua alteração para o repositório remoto, podendo ser vista por todos os membros da equipe que está trabalhando com você.
+- **git pull**: Esse comando faz exatamente o contrário do push, puxando tudo o que está no repositório remoto para o seu repositório local. Uma espécie de sincronização é feita ao dar esse comando.
+
+*Obs: Tanto o git pull quanto o git push são acompanhados do comando origin + o nome da sua branch, que é um assunto um pouco mais complexo e tema principal de outro artigo. A princípio, use os comandos acompanhados de "origin master".*
+
+## Exemplo Prático
+
+Vamos supôr que eu tenha um arquivo chamado frutas.txt. Nesse arquivo, temos o texto "Maçã, banana, maracujá, manga". Usando **git init** nesse arquivo ele começa a ser versionado pelo sistema. Logo após eu adiciono a fruta "laranja" ao arquivo deixando o arquivo com uma alteração não vista por ninguém por enquanto. 
+
+Usando o **git status** vou poder ver se há alguma diferença entre o arquivo que eu modifiquei e o arquivo que está no repositório remoto. Vendo que há diferença, posso usar o **git diff** para ver os detalhes entre essas diferenças. O terminal vai me mostrar que a diferença é a palavra "laranja". 
+
+Vendo que está tudo ok, eu uso o comando **git add .** para adicionar todas as mudanças do arquivo atual para o índice, seguidos de um **git commit -m "Adicionando a fruta laranja ao arquivo"** e um **git push origin master**. Nesse ponto, eu já analisei e adicionei todas as diferenças ao meu repositório remoto, usando apenas alguns comandos.
+
+## O que é o Github?
+
+*"Mas o que seria o Github? Não é a mesma coisa que o git então?"*
+
+A resposta é não. O [Github](https://github.com/) é um uma plataforma usada para hospedar projetos que usam o git, ou seja, que possuem o controle de versão. E não existe só o Github. Temos na lista de plataformas com o mesmo propósito o BitBucket, o GitLab, entre outros. Mas com toda certeza o Github é o mais utilizado, possuindo mais de 40 milhões de usuários pelo mundo.
+
+Por ser muito popular no meio de programação, o Github acaba sendo muito usado no mercado de trabalho, tanto para contratações (com análise dos seus projetos que estão lá hospedados), quanto no dia-a-dia, usando o versionamento de código para facilitar o trabalho. Na maioria das empresas, o Git e o Github (ou qualquer outra plataforma de versionamento de código) são quase indispensáveis. Elas gravam seu histórico de alterações de uma maneiras visualmente mais agradável que o git, que é usado pelo terminal, além de possuir outras funcionalidades e interações entre os usuários.
+
+Muita gente diz que o Github é a rede social dos programadores. Bom, eu particularmente não gosto de tratar dessa maneira, mas com certeza é uma das plataformas mais importantes para networking, conexão com o mercado de trabalho e hospedagem de projetos, com toda certeza. No mais, não fique preocupado se for iniciante e não entender tudo sobre git, detalhe por detalhe. É realmente bastante informação. Com o tempo e a prática, o aprendizado fica bem mais simples!
+
+---
+
+**Referências:**
+- [How distributed version control systems work](http://www.helloworldseries.com/?p=96)
+- [GitHub publishes 2019 annual report, with more than 40 million users](https://www.firstxw.com/view/241562.html)
+
+

@@ -1,0 +1,172 @@
+---
+title: 'Construindo um Bot de Telegram com Python em 7 passos'
+date: '2020-10-04'
+language: pt-br
+tags: ['python', 'telegram', 'bot', 'automation', 'tutorial']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Quando eu comecei a programar, eu sentia muita dificuldade e insegurança em relação a automação de apps. Pensava que era um bicho de sete cabeças, e minhas próprias experiências me mostraram o contrário: Automatizar tarefas e criar bots pode ser muito divertido!'
+images: ['/static/images/telegram-bot.png']
+---
+
+Quando eu comecei a programar, eu sentia muita dificuldade e insegurança em relação a automação de apps. Pensava que era um bicho de sete cabeças, e minhas próprias experiências me mostraram o contrário: Automatizar tarefas e criar bots pode ser muito divertido, por isso decidi mostrar um bot simples que construí em 7 passos.
+
+Eu estava em dúvida sobre qual app usar para implementar esse tutorial. No fim, fiquei entre o Telegram e o Discord, mas decidi usar o Telegram por ter um uso maior de bots. Sobre a linguagem em si, não tive dúvidas em momento algum ao escolher Python, visto que é a principal linguagem no momento para automação e bots num geral. Com uma documentação clara, uma comunidade vasta, diversas bibliotecas e uma curva de aprendizado relativamente pequena, não tive dúvidas que Python seria a melhor escolha de linguagem para esse pequeno projeto.
+
+Minha segunda decisão era "O que meu bot iria fazer?". Rapidamente, pensei num bot que recebe o nome de um bairro, cidade ou estado e retorna o clima do mesmo em tempo real. Com isso, só precisamos usar alguma API (Application Programming Interface), e a API utilizada foi a do [OpenWeatherAPI](https://openweathermap.org/), que fornece informações referentes ao clima em tempo real.
+
+**Dito isso, hora de por a mão na massa!**
+
+## 1º PASSO: INSTALANDO TODAS AS BIBLIOTECAS NECESSÁRIAS
+
+Bom, como dito antes, o Python é uma linguagem repleta de bibliotecas. Porém, elas não vem diretamente no seu computador (até porque são MUITAS) e precisam ser instaladas uma por uma. Para isso, precisamos do pip, que é o sistema gerenciador dessas bibliotecas do Python. Normalmente o pip já vem junto com a instalação do python, mas se não vier, você pode seguir os métodos de instalação do mesmo [aqui](https://pip.pypa.io/en/stable/installing/).
+
+Após isso, usaremos o comando pip para instalar todas as bibliotecas necessárias.
+
+A primeira biblioteca é o **requests**, que é uma biblioteca HTTP para fazer requisições, como o nome já diz. Nós vamos usá-la para resgatar os dados da API. Além disso, vamos usar a biblioteca **JSON** (JavaScript Object Notation), que é um formato diferente de respostas de requisições HTTP, e que vamos utilizar para ler nossos dados.
+
+```bash
+pip install requests
+pip install json
+```
+
+A terceira biblioteca necessária é o [python-telegram-bot](https://python-telegram-bot.readthedocs.io/en/stable/), que é uma das várias bibliotecas em Python para bots, mas a que eu julguei como a mais interessante no momento.
+
+```bash
+pip install python-telegram-bot
+```
+
+## 2º PASSO: CRIANDO CONTA NA API
+
+Com as bibliotecas devidamente instaladas, o próximo passo é criar uma conta na OpenWeatherAPI, que vai nos permitir que utilizemos o token de acesso para o total funcionamento da API.
+
+Com a conta criada, podemos ir até a página de API Keys, clicando no seu nome de usuário no canto superior direito.
+
+Então clique no botão 'Generate', na direita da página, e copie a API key, que estiver no canto esquerdo. Guarde a mesma, pois ela será necessária.
+
+## 3º PASSO: RESGATANDO O TOKEN DO TELEGRAM
+
+Para criar um bot no Telegram, você deve seguir alguns outros passos para que tenha a permissão de usar seus scripts na plataforma. Então, pesquise @BotFather no telegram e inicie uma conversa com o mesmo, digitando o comando /start.
+
+Depois, digite o comando /new_bot. O Bot Father vai pedir um nome e um username para o seu bot, escolha um de sua preferência.
+
+Caso não tenha um nome ou username já utilizado na plataforma, o bot vai te enviar o token de acesso, chave que será usada para acessar o bot. Guarde esse token também, ele será essencial.
+
+Com tudo isso pronto, podemos começar a pôr a mão na massa!
+
+## 4º PASSO: COLETANDO OS DADOS DA API
+
+Na pasta usada para o nosso projeto, vamos criar dois arquivos. Um para pegar os dados do clima, que eu chamei de *weather.py*, e um para ler e enviar mensagens no telegram, que eu chamei de *telebot.py*.
+
+No arquivo weather.py, vamos começar importando algumas das bibliotecas que instalamos no primeiro passo.
+
+```python
+import requests, json
+```
+
+Agora, vamos criar uma função para resgatar os dados do clima de acordo com a cidade que enviamos. Use seu token de acesso na variável **api_key**.
+
+```python
+def getWeather(location):
+    api_key = "MY_TOKEN"
+    base_url = "http://api.openweathermap.org/data/2.5/weather?"
+    city_name = location
+    complete_url = base_url + "appid=" + api_key + "&q=" + city_name
+    response = requests.get(complete_url)
+    x = response.json()
+
+    if x["cod"] != "404":
+        y = x["main"]
+        current_temperature = str(round(y["temp"]-273.15, 2))
+        min = str(round(y["temp_min"]-273.15, 2))
+        max = str(round(y["temp_max"]-273.15, 2))
+        name = x["name"]
+        current_humidiy = str(y["humidity"])
+        z = x["weather"]
+        weather_description = z[0]["description"]
+        weather = (str(name) + "\n" + "\n" +
+        str("Temperatura: " + current_temperature + "°C" + "\n") +
+        str("Mínima: " + min + "°C" + "\n") +
+        str("Máxima: " + max + "°C" + "\n") +
+        str("Umidade do ar: " + current_humidiy + "%" + "\n"))
+     else:
+        weather = "CIDADE NÃO ENCONTRADA. TENTE NOVAMENTE"
+     return weather
+```
+
+Essa função vai retornar a temperatura e mais alguns detalhes da cidade que passarmos como parâmetro, a não ser que ela seja inválida (ou seja, que o código do erro seja 404).
+
+Com os nossos dados da API prontos, vamos ao próximo passo!
+
+## 5º PASSO: FAZENDO O BOT LER AS NOSSAS MENSAGENS
+
+O próximo passo é criar o bot propriamente dito, ou seja, todos os comandos que realmente vão interagir com o usuário. Para isso, eu comecei o script no outro arquivo, o telebot.py, que será responsável por todo o resto do nosso código.
+
+Em primeiro lugar, devemos importar as bibliotecas necessárias. Apesar de ter instalado a biblioteca inteira do python-telegram-bot, eu não pretendo usar todas as funções presentes nela, então importei apenas o necessário. Além disso, importei do nosso outro arquivo (weather.py) a nossa função getWeather, para poder implementá-la nesse script sem problemas.
+
+```python
+from telegram.ext import Updater, CommandHandler, InlineQueryHandler, MessageHandler
+import telegram.message
+from weather import getWeather
+```
+
+Agora, precisamos criar uma função principal, que vai receber tudo o que for enviado para o bot. Guardei o token do telegram numa váriavel chamada *MY_TOKEN_ID*, e com isso criei uma função chamada main, que vai ter alguns comandos necessários
+
+```python
+def main():
+    updater = Updater(MY_TOKEN_ID)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("clima", weather))
+    updater.start_polling()
+    updater.idle()
+```
+
+A função vai criar uma instância com seu token de acesso, depois usar o updater.dispatcher para começar a registrar os comandos, que serão especificados na linha abaixo. Adicionei um comando "clima", que quando digitado pelo usuário, vai executar a função que decidi chamar de **weather**. Essa função vai ser mostrada no próximo passo.
+
+## 6º PASSO: FAZENDO O BOT RESPONDER AS NOSSAS MENSAGENS
+
+Bom, a função de resposta deve receber dois parâmetros. O primeiro é o *bot*, que representa o próprio bot em si e todos comandos de envio, e o segundo é o *update*, que representa todas as atualizações, ou seja, as mensagens enviadas, quem enviou, o horário, entre outros.
+
+Logo, devemos criar uma função chamada weather (como especificamos no *CommandHandler* acima) e colocarmos os parâmetros *bot* e *update*, além de alguns comandos. A declaração da função ficaria dessa maneira:
+
+```python
+def weather(bot, update):
+    chat_id = update.message.chat_id
+    bot.send_message(chat_id=chat_id, text="algum texto")
+```
+
+A variável *chat_id* é estritamente necessária, pois ela que vai especificar para o sistema para quem o bot deve enviar a mensagem. Como queremos que ele simplesmente responda a mensagem que recebeu, nós apenas dizemos que é o *update.message.chat_id*, ou seja, o id da mensagem recebida e posteriormente passada como parâmetro.
+
+Após isso, temos a função *bot.send_message()*. Como o nome já diz, essa função vai ser responsável por enviar a mensagem para o chat_id da variável. Essa função recebe dois parâmetros também. O primeiro é o próprio *chat_id*, e o segundo é o parâmetro *text*, que é o texto que queremos enviar como resposta.
+
+```python
+def weather(bot, update):
+  chat_id = update.message.chat_id
+  message = str(update.message.text)
+  lst = message.split(" ", 1)
+  location = lst[1]
+  bot.send_message(chat_id=chat_id, text=getWeather(location=str(location)))
+```
+
+Pronto, o bot está praticamente finalizado. Então vamos para o último passo!
+
+## 7º PASSO: CRIANDO A ÚLTIMA CONDIÇÃO NECESSÁRIA E RODANDO O BOT
+
+Para terminar, precisamos usar a condição **if __name__ == "__main__"**, que é muito usada em Python basicamente para garantir que o comando vai ser utilizado quando rodamos o arquivo diretamente.
+
+```python
+if __name__ == "__main__":
+    main()
+```
+
+Pronto! O seu código já deve estar funcionando normalmente e o seu bot será capaz de responder em tempo real, enquanto seu arquivo estiver sendo executado.
+
+---
+
+É basicamente isso! A criação de bots pode ser muito divertida e, entendendo o básico, o céu é o limite. Use sua criatividade para criar coisas úteis!
+
+**Você pode estar acessando o código inteiro no meu repositório do Github**, que vai estar totalmente aberto a issues e pull requests. Vou estar sempre dando uma olhada e sempre aberto a novas ideias.
+
+No mais, espero que tenha gostado. Deixe seu feedback, crítica ou adendo que queira fazer. Discussões sobre o tema são super bem-vindas!
+
+

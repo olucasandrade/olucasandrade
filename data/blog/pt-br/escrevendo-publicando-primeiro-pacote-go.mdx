@@ -1,0 +1,175 @@
+---
+title: 'Escrevendo e "publicando" seu primeiro pacote em Go'
+date: '2024-01-30'
+language: pt-br
+tags: ['go', 'golang', 'package', 'open-source', 'tutorial']
+authors: ['lucas-andrade']
+draft: false
+summary: 'De alguns meses pra cá, tenho me aventurado em Go nos projetos. Tenho muito mais experiência com Javascript/Typescript no front, e no backend e escrita de scripts, minha experiência é muito maior com Python. Por isso, ainda tô tentando me acostumar com algumas das peculiaridades da linguagem.'
+images: ['/static/images/go-package.png']
+---
+
+De alguns meses pra cá, tenho me aventurado em Go nos projetos. Tenho muito mais experiência com Javascript/Typescript no front, e no backend e escrita de scripts, minha experiência é muito maior com Python. Por isso, ainda tô tentando me acostumar com algumas das peculiaridades da linguagem, mas as razões são inúmeras pra eu ter escolhido Go como a minha principal linguagem pessoal. Razões essas que vão ficar pra um outro artigo.
+
+***Eu juro que não é por conta da fofura do Mascote…***
+
+Que toda linguagem tem sua peculiaridade já sabemos, mas tá sendo divertido aprender, fazer meus projetos e entender mais sobre essa linguagem que, na minha humilde opinião, é sensacional.
+
+Então pensei: porque não compartilhar parte desse conhecimento?
+
+Recentemente, escrevi um pacote que analisa alguns dados de uma url e retorna uma relação com esses dados:
+
+```json
+{ "LoadTime":"488.837125ms","HTTPRequestsCount":3,"PageSize":53 }
+```
+
+Esses são: Tempo de carregamento, contagem de requisições HTTP externas que são feitas dentro da página e o tamanho da página, em Bytes.
+
+**Você pode conferir e usar o pacote [aqui](https://github.com/olucasandrade/url-analyzer)**.
+
+Detalhadamente, não é o foco do artigo explicar o porquê do pacote, como foi feito, como desenvolver… O meu propósito é que essa leitura termine com você entendendo como publicar um pacote em Go, pra publicar qualquer pacote de sua vontade.
+
+Mas sem mais delongas, vamos ao passo a passo!
+
+*Disclaimer: Estou assumindo nesse passo a passo que o leitor já criou um projeto em Go, seja ele simples, seja uma API mais complexa, então vou poupar algumas explicações mais básicas.*
+
+## Passo 1: Definindo e criando seu pacote
+
+Vamos começar pelo básico, que é criando o pacote em Golang. No exemplo do artigo, vou explicar como se estivesse criando o pacote que já criei, o próprio url-analyzer.
+
+Em tese, tudo que se cria em go é um "pacote". Então o primeiro passo não vai ser nada diferente do que já é feito em qualquer projeto, que é iniciar o pacote em go dentro da pasta do projeto, seja clonando um repositório criado no Github, seja criando uma pasta diretamente com o nome do projeto:
+
+```bash
+go mod init github.com/your-username/url-analyzer
+```
+
+Isso vai criar um `go.mod` na sua pasta com algo parecido com isso:
+
+```bash
+module github.com/your-username/url-analyzer
+
+go 1.21.5
+```
+
+## Passo 2: Aplicando as funcionalidades do seu projeto
+
+Na raiz do seu projeto, crie um arquivo para o pacote, que vai concentrar as funções, classes ou tipos que vão ser importados externamente. Pode ser chamado de `main.go`, mas o recomendado é criar com o nome do seu pacote, já que não é um programa a ser executado por si só, então eu criei uma pasta chamada url-analyzer, que contém o único método do meu pacote:
+
+```go
+package url_analyzer
+
+import (
+  "github.com/olucasandrade/url-analyzer/models"
+  "github.com/olucasandrade/url-analyzer/services"
+)
+
+func Analyze(url string) (*models.PerformanceData, error) {
+    as := &services.AnalyzerService{}
+    return as.AnalyzeURL(url)
+}
+```
+
+No **meu caso**, estou usando outras pastas para a arquitetura, como models, services e helpers, para facilitar nos testes unitários e na organização (você pode ver mais no [link do repositório](https://github.com/olucasandrade/url-analyzer)), mas essa mesma lógica serve pra qualquer projeto, ainda que seja um método que some dois valores.
+
+Os testes também, como comentado acima, foram aplicados em cada um dos arquivos. Não é obrigatório para a criação do pacote em si, mas é uma excelente prática dentre os pacotes (e fundamental para qualquer projeto que for feito).
+
+## Passo 3: Deixando seu pacote público no Github
+
+Com o pacote em si já criado, precisamos apenas seguir os passos para hospedá-lo corretamente no seu repositório. No meu caso, usei o Github.
+
+Não é nada diferente de subir qualquer código:
+
+```bash
+git add url-analyzer
+git commit -m "..."
+git push origin main
+```
+
+Diferente do Python com o Pypi e o Node com o npm, em Go o download de um pacote acontece diretamente onde ele está hospedado, o que facilita e muito a vida de quem publica o pacote.
+
+Pronto! Seu pacote já está público e pronto para ser usado por quem quiser.
+
+## Importando e testando seu pacote
+
+Como comentado acima, em Go o download de um pacote acontece diretamente onde ele está hospedado, então podemos criar um projeto pra testes da mesma maneira:
+
+```bash
+go mod init github.com/your-username/url-analyzer-tests
+```
+
+Depois baixar o pacote com o `go get`:
+
+```bash
+go get github.com/olucasandrade/url-analyzer
+```
+
+e na pasta `main.go`, vou testar se o método `Analyze` funciona corretamente:
+
+```go
+package main
+
+import (
+  "fmt",
+  "github.com/olucasandrade/url-analyzer"
+)
+
+func main() {
+  response, err := url_analyzer.Analyze("www.criaway.com")
+   if (err != nil) {
+    panic(err)
+   }
+  fmt.Println(response.HTTPRequestsCount, "-", response.LoadTime, "-", response.PageSize)
+  // 3 - 114.285791ms - 53
+}
+```
+
+All done! Garantimos que nosso pacote está pronto e funcionando perfeitamente! Agora vamos pra algumas dicas pra garantir que seu pacote está o ideal:
+
+## Dica #1: Criar versões para o seu projeto
+
+Não é algo essencial, mas criar versões para o seu projeto é bem simples e facilita a organização do que é um pacote ou uma api pública.
+
+Importando meu pacote em outro projeto sem definir a versão do meu pacote, a importação ficava assim:
+
+```
+require (
+ github.com/gin-gonic/gin v1.9.1
+ github.com/joho/godotenv v1.5.1
+ github.com/olucasandrade/url-analyzer v0.0.0-20240126045338-58ea742506a0
+ github.com/stretchr/testify v1.8.4
+ go.mongodb.org/mongo-driver v1.13.1
+)
+```
+
+Repare que meu pacote está especificando uma versão 0.0.0 + o hash de um commit, o que atrapalha muito caso eu queira baixar uma versão específica sem alguma alteração mais recente.
+
+Podemos definir uma versão inicial no formato `vX.X.X` e ir incrementando os valores de acordo com as mudanças.
+
+No meu caso, eu comecei pela versão `v1.0.0`, então basicamente o que foi feito foi:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+E pronto! O projeto já está com as tags de versão no Github.
+
+## Dica #2: Criar um README.md
+
+Não é necessário para o funcionamento do pacote em si, mas é muito importante criar uma documentação legal se seu pacote vai se tornar público. Aumenta a segurança e facilidade pra quem for usar, o que pode (e vai) aumentar a popularidade.
+
+Podemos usar alguns [templates de inspiração](https://www.readme-templates.com/) para o README caso tenhamos dificuldades.
+
+## Dica #3: Definir uma licença
+
+Bem como README citado acima, é importante definirmos o `LICENSE`, que define a licença de software do seu projeto e descreve o que pode e não pode ser feito com seu código-fonte.
+
+Podemos usar o site [choosealicense.com](https://choosealicense.com/) para definir a licença ideal.
+
+**Plus**: Assim que deixamos um pacote público, ele é refletido no site [pkg.go.dev](https://pkg.go.dev) com alguns detalhes interessantes. Por exemplo, [meu pacote url-analyzer já está sendo refletido no site](https://pkg.go.dev/github.com/olucasandrade/url-analyzer).
+
+---
+
+Espero que tenha gostado! Como comentei no ínicio do artigo, também sou um aprendente em Go, então qualquer dica, sugestão ou plus são super bem vindas e vão nos ajudar a evoluir como comunidade! Deixe seu comentário! Te vejo no próximo artigo!
+
+

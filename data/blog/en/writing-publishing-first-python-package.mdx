@@ -1,0 +1,166 @@
+---
+title: 'Writing and Publishing Your First Python Package'
+date: '2024-02-27'
+language: en
+tags: ['python', 'package', 'pypi', 'open-source', 'tutorial']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Trying to create your first public library and having difficulties? Come with me and I will explain!'
+images: ['/static/images/python-package.png']
+---
+
+Recently, I wrote a Python package that analyzes some data from a url and returns a relationship with this data:
+
+```json
+{ "load_time":"488.837125ms","http_requests_count":3,"page_size":53 }
+```
+
+These are: Loading time, count of external HTTP requests made within the page and page size, in Bytes.
+
+**You can check and use the package [here](https://github.com/olucasandrade/py-url-analyzer)**.
+
+But I confess I knew very little about the process of publishing a library in Python, and had difficulty understanding exactly the step-by-step looking for some references in the documentation.
+
+But after a while... I made it! The package is published and is on PyPI, ready to be installed by anyone with pip install. But what is the publishing process? That's what we'll see in this article!
+
+## But what is this PyPI thing?
+
+The Python Package Index (PyPI) is an online repository that serves as a central point for distributing Python packages. It houses a wide variety of libraries, frameworks and tools developed by the Python community. Developers can access PyPI to find and install ready-to-use packages in their projects, significantly facilitating the Python software development process. The packages that are on PyPI are downloaded precisely using `pip`.
+
+## And how does pip work?
+
+Pip is the standard package management tool for Python, and its main function is to simplify the installation and management of Python packages. It works simply: users can use pip through the command line of the terminal or command prompt of the operating system. Commands like `pip install` followed by the package name install the specified package. Pip then automatically downloads the package from PyPI (or other specified repositories) and installs it in the local Python environment. In addition, pip can be used to uninstall packages (`pip uninstall`), list installed packages (`pip list`), update packages to the latest versions, among other functionalities, simplifying the dependency management process in Python projects.
+
+## Publishing your package
+
+### #1: Creating the package
+
+First of all, of course, you need to have your package set up to be used by other projects. I started by creating a `py-url-analyzer` folder. In it, after creating a virtual environment and installing the necessary libraries (it's not the focus of the article, so I'll leave [this external article about it](https://docs.python.org/3/library/venv.html)), I created a `requirements.txt` with the following command:
+
+```bash
+pip freeze > requirements.txt
+```
+
+With this, we'll have a file defining all the libraries needed for the project. This will be useful for anyone accessing the project and also for setup.
+
+From there, I created a `url_analyzer` folder with an `__init__.py` file, which will contain the package method. So, for now, the project looked like this:
+
+```
+├── requirements.txt
+├── LICENSE
+├── .gitignore
+├── README.md
+├── test_url_analyzer.py
+├── url_analyzer
+│   └── __init__.py
+```
+
+Remember that following this folder and file architecture is completely optional. Since Python is very flexible, you can organize it the way you think is best.
+
+### #2: Configuring the package
+
+To configure the package so that it's possible to publish on PyPI in the future, we need to create a `setup.py` file, which will contain the necessary information for our package to be something to be published.
+
+Although there is a template, there's no way to generate one by default, like a `package.json`, for example. So it needs to be filled directly. But, in general, it's simple information. This is the standard `setup.py` documentation, and this is my file that might be useful to base on:
+
+```python
+from setuptools import setup, find_packages
+
+setup(
+    name='py-url-analyzer',
+    version='0.0.2',
+    packages=find_packages(),
+    author='Lucas Andrade',
+    author_email='lafdesouza2002@gmail.com',
+    description='A simple URL analyzer',
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
+    url='https://github.com/olucasandrade/py-url-analyzer',
+    install_requires=[
+        'beautifulsoup4',
+        'certifi',
+        'charset-normalizer',
+        'idna',
+        'requests',
+        'soupsieve',
+        'urllib3',
+    ],
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'License :: OSI Approved :: MIT License',
+        'Operating System :: OS Independent',
+    ],
+)
+```
+
+From here, to generate the distribution package of your Python project, you need to execute the following command in the terminal:
+
+```bash
+python setup.py sdist
+```
+
+This command will create a compressed file (.tar.gz or .zip) that contains all the files needed to install your package on other systems.
+
+### #3: Creating an account and token on PyPI
+
+Now, we need to access the PyPI website (https://pypi.org/) and create an account (or login, if you already have one). Then, follow these steps to create a token. This will be necessary for publishing:
+
+- Access https://pypi.org/manage/account/token/
+- Enter a name for the token.
+- Click the "Create Token" button.
+- Copy the generated token, as you'll need it soon.
+
+### #4: Uploading the package to PyPI
+
+To upload the package, we'll use the `twine` lib, which is an open-source tool for publishing Python packages to PyPI.
+
+First, let's install `twine`:
+
+```bash
+pip install twine
+```
+
+Now navigate to your project folder in the terminal and execute the following command:
+
+```bash
+twine upload dist/*
+```
+
+Twine will ask for your PyPI username and password. Instead, you can use the token you generated earlier:
+
+- Type `__token__` in the username prompt.
+- Type your token in the password prompt.
+
+With this, the upload should be successful and you can check by accessing the project directly with:
+
+```
+https://pypi.org/project/<project-name>/
+```
+
+Or simply searching for your project at https://pypi.org/manage/projects/.
+
+## Tips
+
+Done! With this, your package is ready to be installed in any external project.
+
+### Important tips:
+
+- **Make sure your code is clean and well documented before publishing**: Before publishing your package, it's crucial to ensure that your code is organized, readable and well documented. Make sure to follow coding best practices and comment the code clearly and concisely. This will not only facilitate understanding of your code by other developers, but will also help in maintenance and identifying possible problems.
+
+- **Use semantic versioning for your package**: Adopt a semantic versioning approach when assigning versions to your package. This means you should follow a consistent pattern of version increments based on the changes made to your code. The "MAJOR.MINOR.PATCH" format is recommended, where "MAJOR" is incremented for incompatible changes, "MINOR" for backward-compatible additions and "PATCH" for backward-compatible bug fixes.
+
+- **Include a README.md with information about your package, such as installation, usage and examples**: A README.md file is essential to provide detailed information about your package to users. Make sure to include clear instructions on how to install your package using pip or other package management tools, how to use its functionalities and code examples to help users get started.
+
+- **Test publishing first on TestPyPI**: Before publishing your package on the official PyPI, it's highly recommended to test publishing on TestPyPI. TestPyPI is a test environment for Python packages, where you can simulate the publishing process without affecting the main repository. This allows you to check if everything is configured correctly and if there are no packaging or installation problems before making the official publication. The process is the same as PyPI, with the only difference being the upload specifying the repository:
+
+```bash
+twine upload --repository testpypi dist/*
+```
+
+You also need to create an account on https://test.pypi.org/.
+
+---
+
+I hope you enjoyed it and see you in the next article! 👋
+
+

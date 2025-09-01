@@ -1,0 +1,112 @@
+---
+title: 'Como o Amazon S3 revoluciona o armazenamento de dados'
+date: '2024-08-06'
+language: pt-br
+tags: ['aws', 's3', 'cloud-storage', 'data-management', 'backend']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Hoje, a AWS criou um ecossistema onde tudo pode estar ligado ao S3. Mas como esse serviço consegue ser tão revolucionário? Vem entender!'
+images: ['/static/images/amazon-s3.png']
+---
+
+Quando comecei a estudar programação, cerca de 6 anos atrás, existia uma discussão muito forte sobre o que usar nas aplicações para armazenar arquivos. Bibliotecas como [multer](https://www.npmjs.com/package/multer), [CarrierWave](https://github.com/carrierwaveuploader/carrierwave) e [Django-File-Uploads](https://docs.djangoproject.com/en/5.0/topics/http/file-uploads/) eram imensamente recomendadas, e, apesar do S3 já ser considerado uma ótima solução, ainda ficava correndo por fora nessa discussão, em termos de unanimidade.
+
+Hoje, o cenário mudou completamente, e o S3 é a primeira alternativa em termos de armazenamento. Literalmente todas as APIs que mexi nos últimos 5 anos usam a tecnologia, e nem bato muita cabeça ao pensar em como vou armazenar arquivos em minhas próprias APIs, já crio logo um bucket no S3.
+
+Mas como a Amazon surfou na necessidade de uma solução escalável para armazenar arquivos, e como o S3 consegue ser tão revolucionário nesse meio, se estendendo para ser revolucionário até mesmo no armazenamento de dados?
+
+## Mas, primeiramente, que é o S3?
+
+O [Amazon S3 (Simple Storage Service)](https://aws.amazon.com/s3/) é um serviço de armazenamento em nuvem da AWS que permite armazenar e recuperar qualquer quantidade de dados a qualquer momento, de qualquer lugar na web. Ele é altamente escalável, durável e seguro, o que o torna ideal para backup de dados, recuperação de desastres, armazenamento de arquivos de mídia (principal uso do serviço) e muito mais. Com o S3, você organiza seus dados em "buckets", que são como diretórios onde você guarda seus arquivos. Além disso, o S3 oferece controle detalhado de permissões e versões de arquivos, garantindo que seus dados estejam sempre protegidos e acessíveis quando necessário.
+
+Então, vamos imaginar que você tem um SAAS e precisa armazenar uma grande quantidade de vídeos que seus usuários fazem upload diariamente. Em vez de investir em servidores físicos e infraestrutura própria, você pode usar o S3 para armazenar esses vídeos. Assim, sempre que um usuário faz upload de um vídeo, ele é automaticamente enviado para um bucket no S3, que devolve uma URL. No banco, podemos simplesmente salvar essa URL em um campo como string. Isso não só economiza tempo e recursos, mas também garante que seus dados estejam seguros e acessíveis globalmente, sem você precisar se preocupar com a escalabilidade ou manutenção da infraestrutura.
+
+Para além da vantagem de praticamente "terceirizarmos" a tarefa de cuidar dos nossos arquivos, e da facilidade que temos em ter uma referência deles no banco, o S3 possui outra vantagem imensa:
+
+**É extremamente barato**.
+
+Na data desse artigo (06/08/2024), a AWS fornece 5GB (!) de armazenamento gratuitamente, além de 20.000 GET; 2.000 PUT, COPY, POST ou LIST; e 100 GB de transferência de dados todo mês. De graça.
+
+E mesmo quando falamos em custos, o valor é ínfimo, se comparado a robustez da solução. Hoje, no plano mais básico, ainda que ultrapassemos a cota gratuita (o que pra uma plataforma com pouca-média adoção é difícil), o preço fica em torno de 0.023 centavos (dólar) por GB (Valores apenas de armazenamento). Então, ainda que seja utilizado 1TB a mais do que os 5GB já usados, o custo mensal seria aproximadamente de 23 dólares por mês.
+
+*Mas vamos combinar, se os usuários de uma plataforma sua estão subindo 1TB em arquivos, provavelmente você já lucrou o suficiente pra isso não ser um problema…*
+
+## Vantagens do S3
+
+Então, em resumo, as vantagens do S3 em relação a quase todas as outras soluções acabam por ser:
+
+- **Escalabilidade**: O S3 pode armazenar e gerenciar quantidades enormes de dados, escalando automaticamente à medida que suas necessidades crescem.
+- **Durabilidade e Confiabilidade**: O S3 oferece uma durabilidade de 99,999999999% (11 noves) para os objetos armazenados, com replicação automática de dados em várias zonas de disponibilidade.
+- **Segurança**: O S3 permite criptografar dados em repouso e em trânsito. Ele também oferece controle granular de acesso por meio de políticas de IAM e controle de acesso a nível de bucket e objeto.
+- **Custo-efetividade**: O S3 tem um modelo de pagamento conforme o uso, permitindo que você pague apenas pelo que usar, sem custos iniciais. Existem diferentes classes de armazenamento para otimizar custos com base na frequência de acesso aos dados.
+- **Alta Disponibilidade**: Os dados armazenados no S3 estão disponíveis em várias regiões e zonas de disponibilidade (de São Paulo até o Bahrein), garantindo MUITA disponibilidade e resiliência a falhas.
+- **Facilidade de Integração**: O S3 se integra facilmente com outros serviços da AWS, como Lambda, EC2, RDS e muitos outros, facilitando a criação de soluções complexas e escaláveis.
+- **Performance**: O S3 é projetado para fornecer alta performance em termos de latência e throughput, adequando-se a uma ampla variedade de casos de uso, desde backup e arquivamento até big data e análise.
+- **Gerenciamento de Ciclo de Vida**: O S3 oferece políticas de ciclo de vida que permitem automatizar a migração de dados entre diferentes classes de armazenamento com base em regras predefinidas.
+- **Versatilidade**: O S3 pode ser usado para uma ampla gama de aplicações, incluindo armazenamento de arquivos de mídia, backup e recuperação de desastres, big data, análise de dados e etc.
+
+## A vida antes do S3
+
+Como eu comentei nos primeiros parágrafos, o armazenamento de arquivos sempre foi algo bem mais desafiador antes da solução em nuvem. Geralmente, era adotada uma ou mais das seguintes soluções:
+
+- **Armazenamento em Servidores Locais**: Empresas costumavam manter seus próprios servidores e datacenters para armazenar dados. Isso envolvia a compra, configuração e manutenção de hardware, além de lidar com problemas de escalabilidade e disponibilidade.
+- **Sistemas de Armazenamento em Rede (NAS)**: NAS é uma solução de armazenamento conectada à rede que permite o compartilhamento de arquivos entre múltiplos usuários e dispositivos em uma rede local. É fácil de gerenciar, mas pode ser caro e difícil de escalar.
+- **Rede de área de armazenamento (SAN)**: SAN é uma rede de alta velocidade que conecta servidores a dispositivos de armazenamento. Ele oferece alta performance e confiabilidade, sendo utilizado em ambientes de datacenters, mas é caro e complexo de implementar e gerenciar.
+- **Fitas Magnéticas e Armazenamento em Disco Externo**: Backup e arquivamento de dados frequentemente eram realizados usando fitas magnéticas ou discos externos. Embora ainda sejam utilizados para arquivamento a longo prazo devido ao custo relativamente baixo, eles não oferecem a mesma conveniência ou acessibilidade que soluções em nuvem.
+- **Serviços de Hospedagem e Colocation**: Algumas empresas optavam por hospedar seus servidores em instalações de terceiros (colocation) para reduzir custos de infraestrutura e obter melhor conectividade. No entanto, isso ainda envolvia a manutenção de hardware e gerenciamento de servidores.
+- **Soluções de Armazenamento Gerenciado**: Empresas utilizavam serviços gerenciados de armazenamento fornecidos por empresas especializadas que ofereciam soluções de armazenamento offsite, backup e recuperação de desastres. Esses serviços, no entanto, tinham limitações em termos de escalabilidade e flexibilidade comparados às soluções em nuvem.
+
+Tá, já sabemos que o S3 veio para solucionar 99% (e 11 noves depois da vírgula) desses problemas. Mas como a Amazon consegue ter uma solução tão escalável, completa, e o mais impressionante, com um custo-benefício ótimo?
+
+## Como o S3 consegue ser tão revolucionário?
+
+É importante destacarmos algumas coisas pra entender como a Amazon faz com que o S3 valha a pena tanto pra eles, quantos para os clientes, e são coisas primordiais pra entendermos o esquema, em termos de regra de negócio, principalmente.
+
+O que eu considero mais importante é:
+
+> A AWS não seria a mesma sem o S3. E o S3 não seria NADA sem a AWS.
+
+Tirando o óbvio, que o S3 não existiria sem a AWS porque a AWS que ideou o S3, essa frase na real tem um outro propósito, que é: o S3 sobrevive debaixo de uma plataforma de nuvem muito bem arquitetada e gerenciada para fazer com que seus serviços sobrevivam, e, ainda que seja muito importante, o S3 é apenas um dos inúmeros serviços.
+
+A AWS tem vários datacenters ao redor do mundo. Só falando em zonas de disponibilidade, que podem ter um ou mais datacenters, estamos falando de mais de 100. Essa infraestrutura nunca valeria a pena em ser usada só pelo S3, isso não daria retorno nenhum para a AWS (a menos que eles aumentassem bizarramente o custo para o cliente).
+
+Em outras palavras, um data center pode armazenar dados para o Amazon S3, hospedar aplicações no Amazon EC2, executar funções no AWS Lambda e fornecer capacidade de banco de dados no Amazon RDS, entre outros serviços. **Isso se chama compartilhamento de infraestrutura**, e é uma abordagem excelente. Faz com que as aplicações mais baratas valham mais a pena, porque as mais caras sempre vão suprir a diferença.
+
+> Segundo a Bloomberg Linea, no primeiro semestre de 2024 a AWS teve um lucro de 9,42 bilhões de dólares.
+
+Existe outra estratégia chamada **Lock-In**. Uma vez que os dados estão armazenados no S3, é conveniente para os clientes continuar usando outros serviços da AWS para processamento e análise de dados. Isso cria uma dependência do ecossistema AWS, o que pode aumentar a receita à medida que os clientes adotam mais serviços da AWS.
+
+Um outro ponto é o modelo de cobrança, que é algo que hoje vale muito a pena e é muito adotado por modelos "as a service". O S3 adota um modelo de precificação baseado em pagamento conforme o uso. Isso significa que os clientes pagam apenas pelo armazenamento de dados e pelas operações que realmente utilizam, como transferências e solicitações. Esse modelo é atrativo para os clientes, porque elimina a necessidade de investimentos iniciais altos e permite uma gestão flexível dos custos. Ao cobrar por cada GB armazenado e cada requisição, a AWS consegue capturar receita de forma escalonável, conforme o crescimento das necessidades dos clientes.
+
+Então, empresas que estão no início (a maior parte) pagam pouco ou nada, enquanto empresas maiores gastam mais, proporcionalmente, o que vale muito a pena pra Amazon. Se o serviço é bom o suficiente pra começar usando e é escalável, ele provavelmente vai crescer junto com a empresa
+
+E hoje existem muitas, MUITAS empresas usando o S3.
+
+O melhor exemplo é a Netflix, [que usa o S3 de uma maneira diferentona pra armazenar seus arquivos](https://aws.amazon.com/solutions/case-studies/netflix-storage-reinvent22/). Exemplo de empresa que usa o S3 é o que não falta.
+
+Então, de cerca forma, a AWS abocanha parte do crescimento das empresas que usam o S3, além dos outros serviços (a maioria segue esse modelo de cobrança).
+
+## Linha do Tempo da Adoção do Amazon S3
+
+- **2006**: Lançamento oficial do Amazon S3. Inicialmente, adotado principalmente por startups e pequenas empresas que necessitam de uma solução de armazenamento escalável e econômica.
+- **2010**: A introdução do Amazon CloudFront impulsiona ainda mais a adoção do S3 para entrega de conteúdo global, melhorando o desempenho de sites e aplicações.
+- **2013**: A capacidade de definir políticas de ciclo de vida e a replicação entre regiões atraem empresas que precisam de soluções robustas para recuperação de desastres e conformidade.
+- **2014**: Setores como saúde e finanças começam a adotar o S3 para armazenar dados sensíveis, graças a criação de mais recursos avançados de segurança e conformidade.
+- **2015**: A introdução do S3 Standard-IA atrai empresas que buscam soluções de armazenamento econômico para dados acessados com menos frequência.
+- **2016**: O S3 Transfer Acceleration e a integração com AWS Lambda aumentam a adoção em indústrias que necessitam de processamento rápido e eficiente de dados.
+- **2017**: A adoção do S3 cresce exponencialmente com a introdução do S3 Glacier, permitindo que empresas arquivem dados a um custo muito baixo.
+- **2018**: O Amazon S3 Select facilita a análise de grandes volumes de dados armazenados no S3, atraindo empresas de ciência de dados e análise de negócios.
+- **2019**: O recurso S3 Object Lock atrai setores regulamentados, como jurídico e financeiro, que necessitam de políticas WORM (Write Once, Read Many) para conformidade.
+- **2021**: A adoção do S3 Intelligent-Tiering cresce, especialmente entre empresas que buscam otimizar custos de armazenamento sem comprometer a acessibilidade dos dados.
+- **2022**: Setores como educação e pesquisa adotam o S3 Glacier Instant Retrieval para armazenar grandes volumes de dados de pesquisa e históricos acadêmicos de forma econômica.
+- **2023–2024**: Adoção contínua do S3, com empresas de todos os tamanhos e setores aproveitando novos recursos de segurança e governança, impulsionando ainda mais a utilização do S3 para armazenamento seguro e gerenciamento de dados.
+
+Então hoje, a AWS revoluciona e cria uma dependência quase como uma enorme teia no mundo tecnológico, onde tudo, no fim das contas, pode estar ligado ao S3. E na verdade essa é uma estratégia utilizada por (quase) todos os seus serviços, mas hoje o tema é armazenamento de dados.
+
+Eu amo falar sobre esse assunto, poderia continuar escrevendo aqui, mas acho que pra falar do S3 estamos de bom tamanho. Vale falar das estratégias da AWS em outros serviços? Muito, mas vai ficar pra um próximo artigo.
+
+No mais, obrigado pela leitura! Espero ter te ajudado a se entender sobre o negócio por trás da AWS. Bom, se tiver alguma sugestão ou complemento útil para citar e contribuir com a comunidade, não esqueça de deixar seu comentário!
+
+Até a próxima 👋
+
+

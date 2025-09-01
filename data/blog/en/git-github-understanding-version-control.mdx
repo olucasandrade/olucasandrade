@@ -1,0 +1,59 @@
+---
+title: 'Git and Github: Understanding How Version Control Works'
+date: '2020-09-20'
+language: en
+tags: ['git', 'github', 'version-control', 'programming', 'beginners']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Many people start their programming journey by learning the code directly, saving their projects on the local machine without feeling the need to put them in their portfolio or facilitate shared projects.'
+images: ['/static/images/git-github.png']
+---
+
+Many people start their programming journey by learning the code directly, saving their projects on the local machine without feeling the need to put them in their portfolio or facilitate shared projects. This practice ends up being more common than many imagine, and it's very important for anyone who wants to enter the programming world (or even in other areas) to understand version control systems in detail.
+
+To understand what Git and Github are, we first need to understand what code versioning is.
+
+Imagine you have a project to do with 3 more people. Each person is responsible for a part and you don't have the same time availability, meaning each one works at a certain time of day. But the code is one, meaning one programmer depends on another's code to avoid incompatibilities in the project. Imagine the work it would be to send zip files every time you made a part of the project, forcing the other programmer to delete and download the same code with different functionalities several times? This is unfeasible in the job market. That's why version control exists.
+
+In a version control system, files are hosted in a remote repository and can be modified at any time without much difficulty. Every time a change is made and sent to the remote repository, all other project participants can get this code automatically, or even work at the same time, saving including the history of changes made in this project, thus avoiding MUCH more work.
+
+That said, when talking about code versioning, it's impossible not to mention [Git](https://git-scm.com/). After all, we're talking about the versioning system most used by Software developers. Git is an open-source system, developed by [Linus Torvalds](https://www.techtudo.com.br/tudo-sobre/linus-torvalds.html), based on a set of commands that will help you exchange modifications made with the remote repository, and vice versa.
+
+After downloading git [here](https://git-scm.com/downloads), see some examples of its main commands that are used in git from the terminal and what they mean:
+
+- **git init**: Command used to start your remote repository, creating a .git folder, thus allowing its versioning
+- **git status**: Command used to check changes that were made to the file (if there are any changes, of course).
+- **git diff**: Command used to analyze more deeply the differences that were made in a certain file.
+- **git add &lt;file-names/directories&gt;**: As the name suggests, the command is used to add changes made to the index, which is like a way of saying that a certain file is "prepared" to be sent to the remote repository.
+- **git commit -m "Some comment"**: This command confirms all changes that were sent to the index (i.e., that were added with git add), adding a comment that usually serves to specify what exactly you're editing, thus keeping your work more organized.
+- **git log**: Shows the entire history of changes (commits) since the .git file was created. For these and other reasons the comment in the commit is important, as git log will show the comments, along with the date they were "committed".
+- **git push**: Command used to send your change to the remote repository, which can be seen by all team members working with you.
+- **git pull**: This command does exactly the opposite of push, pulling everything that's in the remote repository to your local repository. A kind of synchronization is done when giving this command.
+
+*Note: Both git pull and git push are accompanied by the origin command + the name of your branch, which is a somewhat more complex subject and main theme of another article. For now, use the commands accompanied by "origin master".*
+
+## Practical Example
+
+Let's suppose I have a file called fruits.txt. In this file, we have the text "Apple, banana, passion fruit, mango". Using **git init** on this file it starts being versioned by the system. Right after I add the fruit "orange" to the file leaving the file with a change not seen by anyone yet.
+
+Using **git status** I can see if there's any difference between the file I modified and the file that's in the remote repository. Seeing that there's a difference, I can use **git diff** to see the details between these differences. The terminal will show me that the difference is the word "orange".
+
+Seeing that everything is ok, I use the command **git add .** to add all changes from the current file to the index, followed by a **git commit -m "Adding the orange fruit to the file"** and a **git push origin master**. At this point, I've already analyzed and added all the differences to my remote repository, using just a few commands.
+
+## What is Github?
+
+*"But what would Github be? Isn't it the same thing as git then?"*
+
+The answer is no. [Github](https://github.com/) is a platform used to host projects that use git, i.e., that have version control. And there's not only Github. We have in the list of platforms with the same purpose BitBucket, GitLab, among others. But Github is certainly the most used, having more than 40 million users worldwide.
+
+For being very popular in the programming environment, Github ends up being widely used in the job market, both for hiring (with analysis of your projects that are hosted there), and in day-to-day work, using code versioning to facilitate work. In most companies, Git and Github (or any other code versioning platform) are almost indispensable. They record your change history in a visually more pleasant way than git, which is used through the terminal, in addition to having other functionalities and interactions between users.
+
+Many people say that Github is the social network of programmers. Well, I particularly don't like to treat it that way, but it's certainly one of the most important platforms for networking, connection with the job market and project hosting, for sure. Otherwise, don't worry if you're a beginner and don't understand everything about git, detail by detail. It's really a lot of information. With time and practice, learning becomes much simpler!
+
+---
+
+**References:**
+- [How distributed version control systems work](http://www.helloworldseries.com/?p=96)
+- [GitHub publishes 2019 annual report, with more than 40 million users](https://www.firstxw.com/view/241562.html)
+
+

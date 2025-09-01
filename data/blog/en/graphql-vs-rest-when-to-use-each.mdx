@@ -1,0 +1,206 @@
+---
+title: 'GraphQL vs REST: Why and when to use each?'
+date: '2022-05-04'
+language: en
+tags: ['graphql', 'rest', 'api', 'web-development', 'architecture']
+authors: ['lucas-andrade']
+draft: false
+summary: 'The concept of API began several decades ago, and has been gaining strength until it established itself with maximum popularity today. In this article, we explore when and why to use GraphQL or REST in your projects.'
+images: ['/static/images/graphql-rest.png']
+---
+
+The concept of API began several decades ago, and has been gaining strength until it established itself with maximum popularity today. The acronym, which stands for **Application Programming Interface**, refers to an interface that usually intermediates two or more applications without them being intrinsically linked, such as a server connected to a database that, when requested by another application, delivers data asynchronously.
+
+Since then, the idea of APIs has gone through several different protocols and architectures, until **in the early 2000s REST established itself as the main way to build APIs in most languages**, and remains that way today, being used in different popular software around the world. For most of those years, there was no popular alternative to REST, until in 2012 Facebook decided to launch a new technology in its API, called **GraphQL**.
+
+Since then, the technology has been gaining strength in different scenarios, but much is discussed about when and how to use each one. As usual, the answer to which technology to use will always be a big "it depends". Therefore, I decided to summarize in this article what an API using GraphQL and using REST proposes.
+
+## How does a REST API work?
+
+Basically, a REST API mostly uses the HTTP protocol for data transfer and editing, and works similarly to a website when talking about the request concept itself. Basically, a client (another application) makes a call to the server, which sends data back, or changes it, depending on the type of method used, and returns data also conditionally, depending on how your API was written.
+
+In a very basic example, our client will be a site that shows a list of profiles on the home screen, with a clickable card for each profile, showing the name, photo, and user status.
+
+When clicking on the card, the client goes to another page, with details of each profile, showing the data in more detail, such as the position and a description of the user.
+
+Well, this data is not in our client, but in our server, which when requested, returns the data in *JSON* format, as follows:
+
+```json
+{
+  "name": "Lucas Andrade",
+  "state": "Rio de Janeiro", 
+  "description": "Software Developer. Learning to learn and to teach. Weekly articles... but sometimes not. Github: olucasandrade",
+  "employment": "Fullstack Developer"
+}
+```
+
+In addition, there is another table in our database, which contains the photos of each user, a primary one, another secondary one, with an *id* that references the user. Let's suppose that the client should show the user's secondary photo on the first screen, and the main photo on the details screen. Therefore, one more request would be made, also returning a *JSON* in this format:
+
+```json
+{
+  "user": "1",
+  "primaryPicture": "firsturl.png",
+  "secondaryPicture": "secondurl.png"
+}
+```
+
+For both screens, our client will query the same server, which will respond with this specific *JSON*.
+
+However, this basic example serves to expose some problems, which GraphQL proposes to solve.
+
+### Overfetching
+
+Basically, it's when a server returns excess data that the client won't necessarily need. This requires more server resources, which increases latency and cost. In the example above, the client only needs the name and state on the home screen, and the rest of the information only on the details screen.
+
+A solution for this example would be to create one more endpoint, which also increases the need for server resources. For a simple example like the one above, it's something even reasonable. But what if in another situation, I need a screen that lists all users with name, state, and description? Or something that lists all positions? More endpoints, more costs.
+
+### Underfetching
+
+In addition to the overfetching problem in searching for images, where we need to get all the information and then use only the main or secondary image, it was necessary for our client to make two different requests for similar things (one to get users, another to get images). This, in addition to spending more resources, also requires greater network performance.
+
+### Lack of data typing
+
+Especially in an API written in NodeJS or languages similar to Javascript, there is a serious problem that is typing passing without verification. For example, it's more laborious to check if the name field really came as a String, or if it came as a number, or if it didn't come at all.
+
+**These and some other problems are what GraphQL proposes to solve.**
+
+## How does a GraphQL API work?
+
+To start the conversation, when talking about GraphQL, we no longer talk about distinct routes or endpoints: Each call is made to the same route, by the *POST* method, with the call specifications in the request body, as follows:
+
+```graphql
+query getUser($id: ID!, $where: UserInputWhere) {
+  getUser(where: $where) {
+    name
+    state
+    description
+    employment
+    pictures(pictureType: PRIMARY)
+  }
+}
+```
+
+Where:
+
+- *Query* is the type of operation (in this case, the client is actually seeking information);
+- `getUser` is the name of the operation, so that the GraphQL API knows exactly what to do;
+- `$id` and `$where` are the names of the variables received by the query. For example, the *id* is being passed mandatory for the API to search for the user by it;
+- `name`, `state`, `description`, `employment` and `pictures` are the fields returned by the API.
+
+To understand in a very basic way how GraphQL works on the server side, let's define:
+
+### Input Type
+First, let's define the Input, which is what the query will receive as an argument. In our example we'll call it `UserInputWhere`, having a strongly typed and mandatory *ID* (the mandatory nature of a field in GraphQL is defined by the presence of the exclamation):
+
+```graphql
+input UserInputWhere {
+  id: ID!
+}
+```
+
+### Type Definition
+Now, we define the *Type*, which is what our query will return to the client. In this case, we will have the same fields as the REST API return, being strongly typed this time, and also mandatory:
+
+```graphql
+type User {
+  name: String!
+  state: String!
+  description: String!
+  employment: String!
+  pictures: [String!]!
+}
+```
+
+### Enum
+The `pictures` field will also receive an argument, as if it were a *query* within the *query*. It is not mandatory (does not contain exclamation) and is of type `PictureEnum`:
+
+```graphql
+enum PictureEnum {
+  PRIMARY
+  SECONDARY
+  ALL
+}
+```
+
+### Query Definition
+Then, we define the *query* with the name `getUser`, with the *Input* being the `UserInputWhere` defined above and returning the *type User*:
+
+```graphql
+type Query {
+  getUser(where: UserInputWhere!): User!
+}
+```
+
+### Resolvers
+Finally, we define the resolvers, which are a kind of functions responsible for returning a result for each field, whether it's a Query or a specific field of a Type:
+
+```javascript
+const resolvers = {
+  Query: {
+    getUser: async (parent, { where }) => {
+      return await getUserById(where.id)
+    }
+  },
+  User: {
+    pictures: async (parent, { pictureType }) => {
+      return await getUserPictures(parent.id, pictureType)
+    }
+  }
+}
+```
+
+## The GraphQL advantage
+
+**The GraphQL advantage starts with typing**. If the client sends a:
+
+`{ id: "invalid id" }`
+
+GraphQL itself by default will not accept this query, because the *ID* doesn't have a valid type. This helps a lot in languages that are not strongly typed. As well as in the return from server to client, if the function defined in the resolvers doesn't return the name field, *GraphQL* will also automatically report the error, since in the *Type* this field is defined as mandatory.
+
+**The other very strong point of GraphQL is in the query itself.** In the case of our client above, if I need another screen just searching for a user's state, I can just remove the other fields from inside the braces, as follows:
+
+```graphql
+query getUser($id: ID!) {
+  getUser(where: { id: $id }) {
+    state
+  }
+}
+```
+
+This way, the query will not return any field that the client doesn't need, avoiding the overfetching mentioned above.
+
+**And there's the point I consider the ace in the hole in GraphQL**. Remember the `pictures` field defined above? We can use an intermediate function to search for images related to the user depending on the argument passed in `pictureType`, and return everything in the same query, without the need for different endpoints!
+
+In our client example, we can pass a `{ pictureType: PRIMARY }` on the first screen, and a `{ pictureType: SECONDARY }` on the second! Or even a `{ pictureType: ALL }` if we need all photos in some case.
+
+## GraphQL x REST
+
+**In summary, GraphQL is recommended and can be an alternative in cases of:**
+
+- **Applications with different types of clients** where several different implementations will be necessary;
+- **Applications that need a lot of "nested" data** that in a REST API, would result in several different queries in different endpoints;
+- **Applications where the API searches for data from other different APIs**, also in a "nested" way.
+
+**But it can hinder more than help in cases of:**
+
+- **Applications where it's necessary to identify errors by HTTP Status**: Remember, in GraphQL everything is *POST* and a negative point is that many errors can sometimes come with status 200;
+- **Applications that need caching**: Unlike REST, a GraphQL API doesn't have automatic cache storage;
+- **APIs that need very specific documentation**: Although GraphQL has automatic and very useful documentation, only one tool is used for it, unlike REST which has a range of options.
+
+## Conclusion
+
+Even though it has its strengths, **GraphQL is no silver bullet**, and definitely should not be used for situations where it won't make a difference. Like everything in the technology world, problems like overfetching or typing have several alternatives. GraphQL is just one more.
+
+In this article, we addressed the details of two different ways to implement an API, and made a brief explanation of why GraphQL has gained so much strength in recent years and is a valid alternative.
+
+---
+
+So, did you like the article? Have you used any of the options? Do you have your preference? Any suggestions, praise, or disagree with something? Leave your comment!
+
+### Useful links
+
+- [GraphQL Docs](https://graphql.org/learn/)
+- [What is REST?](https://restfulapi.net)
+- [Evolution of APIs](https://blog.api.rakuten.net/evolution-of-apis/)
+
+

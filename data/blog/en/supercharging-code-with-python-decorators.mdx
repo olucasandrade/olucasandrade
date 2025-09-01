@@ -1,0 +1,218 @@
+---
+title: 'Supercharging Your Code with Python Decorators'
+date: '2024-02-06'
+language: en
+tags: ['python', 'decorators', 'programming', 'best-practices']
+authors: ['lucas-andrade']
+draft: false
+summary: 'There are various programming concepts that spread across different languages. One of them is the decorator, which exists in Python. In this article, we will understand why to use, how it works, and the different applications of decorators with Python.'
+images: ['/static/images/python-decorators.png']
+---
+
+There are various programming concepts that spread across different languages. One of them is the decorator, which exists in Python. In this article, we will understand why to use, how it works, and the different applications of decorators with Python.
+
+## What is a decorator?
+
+A Decorator is a feature that allows modifying or enhancing the behavior of functions, methods, or classes.
+
+They are functions that wrap other functions to extend or modify them, adding behaviors without modifying the original function code.
+
+So imagine there are several different functions that will go through the same step, but without necessarily being a step that is part of the function's logic itself. This is the context where we will use decorators.
+
+Still confused? Come closer and I'll start with some basic examples! But first, let's understand how decorator syntax works?
+
+## How to declare a decorator?
+
+A decorator in Python is created using the following syntax: you define a function that will act as the decorator and that also receives a function as an argument. Inside it, we will return another function that, in addition to executing the original function, will concentrate all the "extended" behavior. The syntax looks like this:
+
+```python
+def decorator(func):
+    def innerFunction():
+        # additional behavior
+        print('Hello world')
+        func()
+    return innerFunction
+```
+
+## How to call a decorator?
+
+The syntax for calling a decorator is also simple. Basically, we will use the '@' symbol followed by the decorator function name. This is placed above the function, method, or class you want to modify.
+
+When the "decorated" function is called, it is replaced by the modified version returned by the decorator:
+
+```python
+@decorator
+def sum(a, b):
+    return a + b
+
+print(sum(2, 2)) # 4
+                 # Hello world
+```
+
+## Importance of functools.wraps in decorators
+
+In my examples below, I will use the `@wraps` decorator from `functools` to declare decorators. Decorators are usually declared this way to preserve the metadata of the original function. When you define a decorator without `wraps`, important information about the original function may be lost. This can affect, for example, the function's documentation and access to its specific attributes.
+
+Let's use as an example a decorator that doesn't have `wraps` from `functools`:
+
+```python
+def decorator_without_wraps(func):
+    def inner_function(*args, **kwargs):
+        print('This is a decorator')
+        return result
+    return wrapper
+
+@decorator_without_wraps
+def hello_world():
+    print("Hello")
+
+hello_world() # This is a decorator
+              # Hello
+print(hello_world.__name__) # inner_function
+```
+
+Notice that if I wrap the function in a decorator without `wraps`, the decorator will assume all the metadata of the decorated function.
+
+Using `wraps`, the entire signature of that function is maintained:
+
+```python
+from functools import wraps
+
+def decorator_with_wraps(func):
+    @wraps(func)
+    def inner_function(*args, **kwargs):
+        print('This is a decorator')
+        return result
+    return wrapper
+
+@decorator_with_wraps
+def hello_world():
+    print("Hello")
+
+print(hello_world()) # This is a decorator
+                     # Hello world
+print(hello_world.__name__) # hello_world
+```
+
+## Examples of decorator usage
+
+### 1. @timer
+
+```python
+import time
+from functools import wraps
+
+def timer(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        end = time.perf_counter()
+        print(f'{func.__name__} took {end - start:.6f} seconds to complete')
+        return result
+    return wrapper
+```
+
+In this case, the `timer` function is defined as a decorator. Inside it, there is an internal function called `wrapper`. This function accepts any number of positional and named arguments.
+
+Next, the start time of the original function execution is measured using `time.perf_counter()`.
+
+The original function (`func`) is then called with the arguments passed to `wrapper`, and the result is stored. The execution end time is recorded using `time.perf_counter()` again.
+
+A message is printed, indicating the function name and the time it took to execute, formatted with six decimal places precision. Finally, the result of the original function is returned:
+
+```python
+import requests
+
+@timer
+def generate_lorem_ipsum():
+    rootApi = 'http://asdfast.beobit.net/api/'
+    response = requests.get(rootApi).json().get('text')
+    return response
+
+generate_lorem_ipsum() # generate_lorem_ipsum took 1.063780 seconds to complete
+```
+
+### 2. @repeat
+
+```python
+def repeat(num_times):
+    def decorator_repeat(func):
+        def wrapper_repeat(*args, **kwargs):
+            for _ in range(num_times):
+                value = func(*args, **kwargs)
+            return value
+        return wrapper_repeat
+    return decorator_repeat
+```
+
+Notice that this decorator is wrapped in one more wrapper, and this happens because it receives a parameter. The outer function `repeat` accepts `num_times` as an argument and returns the inner function `decorator_repeat`.
+
+```python
+@repeat(num_times=3)
+def hello_world():
+    print('Hello world')
+
+hello_world() 
+# Output:
+# Hello world
+# Hello world
+# Hello world
+```
+
+### 3. @login_required
+
+```python
+from functools import wraps
+from flask import abort, request
+from services import validate_token
+
+def login_required(func):
+    @wraps(func)
+    def inner_function(*args, **kwargs):
+        if not validate_token(request.headers.Authorization):
+            return abort(401)
+        return func(*args, **kwargs)
+    return inner_function
+```
+
+This is an example for a Flask API, but it can be adapted for any Python API. The `login_required` decorator is designed to ensure that only authenticated users can access certain routes or functions in your application.
+
+```python
+@app.route('/protected')
+@login_required
+def protected():
+    return 'Protected route'
+```
+
+## Advantages of Decorators
+
+As you probably noticed from these examples, decorators have numerous advantages in Python. Among them, we have:
+
+1. **Improved Modularity**: Decorators can be useful for separating specific concerns and improving code modularity. By applying decorators appropriately, it's possible to isolate specific functionalities, facilitating maintenance and understanding of each component.
+
+2. **Code Reusability**: the use of decorators can promote code reusability, as certain functionalities can be encapsulated and applied to various functions. This can reduce code duplication and facilitate the application of consistent patterns in different parts of the system.
+
+3. **Ease in Adding Functionalities**: Decorators offer a flexible way to add functionalities to existing functions without directly modifying the function's source code. This can be useful for incorporating new features or behaviors without affecting existing code.
+
+## Decorator Pitfalls
+
+Like everything in development, decorators also have their risks and pitfalls. These are:
+
+1. **Loss of Traceability**: depending on the context, decorators can make code traceability difficult, making it challenging to understand the origin of modifications and identify the behavior of a decorated function.
+
+2. **Excessive Dependency**: intensive use of decorators can create dependencies between functions, increasing complexity and making maintenance difficult, especially when we have many decorators applied in various parts of the code.
+
+3. **Reading and Comprehension Difficulty**: excessive decorators can make code less readable, harming comprehension, especially for developers who are not familiar with the code base.
+
+4. **Confusion in Decorator Chains**: when placing many decorators on a single function, reading the application order and understanding the execution flow can cause potential confusion in the execution logic.
+
+When using a decorator, it's important to keep it simple, readable, tested, and well applied, avoiding excessive use, which can become a bad practice.
+
+---
+
+Thanks for reading! I hope I helped you organize yourself better in your journey. Well, if you have any suggestions or useful decorators to mention and contribute to the community, don't forget to leave your comment!
+
+Until next time!
+
+
