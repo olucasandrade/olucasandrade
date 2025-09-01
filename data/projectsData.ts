@@ -12,38 +12,31 @@ type ProjectsData = {
 const projectsData: ProjectsData = {
   en: [
     {
-      title: 'A Search Engine',
-      description: `What if you could look up any information in the world? Webpages, images, videos
-        and more. Google has many features to help you find exactly what you're looking
-        for.`,
-      imgSrc: '/static/images/google.png',
-      href: 'https://www.google.com',
+      title: 'Python Decorators Guide',
+      description: `A comprehensive guide to understanding and implementing Python decorators. Learn how to supercharge your code with practical examples and best practices for decorators in Python development.`,
+      imgSrc: '/static/images/logo.png',
+      href: '/en/blog/supercharging-code-with-python-decorators',
     },
     {
-      title: 'The Time Machine',
-      description: `Imagine being able to travel back in time or to the future. Simple turn the knob
-        to the desired date and press "Go". No more worrying about lost keys or
-        forgotten headphones with this simple yet affordable solution.`,
-      imgSrc: '/static/images/time-machine.jpg',
-      href: '/blog/the-time-machine',
+      title: 'GraphQL vs REST Analysis',
+      description: `In-depth comparison of GraphQL and REST APIs. Understand when to use each approach, their advantages and disadvantages, and make informed decisions for your next API project.`,
+      imgSrc: '/static/images/logo.png',
+      href: '/en/blog/graphql-vs-rest-when-to-use-each',
     },
   ],
 
-  fr: [
+  'pt-br': [
     {
-      title: 'Un moteur de recherche',
-      description: `Et si vous pouviez rechercher n'importe quelle information dans le monde ? Pages Web, images, vidéos
-        et plus. Google propose de nombreuses fonctionnalités pour vous aider à trouver exactement ce que vous cherchez.`,
-      imgSrc: '/static/images/google.png',
-      href: 'https://www.google.com',
+      title: 'Guia de Decorators em Python',
+      description: `Um guia completo para entender e implementar decorators em Python. Aprenda como potencializar seu código com exemplos práticos e boas práticas para decorators no desenvolvimento Python.`,
+      imgSrc: '/static/images/logo.png',
+      href: '/pt-br/blog/potencializando-codigo-com-decorators-python',
     },
     {
-      title: 'La Machine à remonter le temps',
-      description: `Imaginez pouvoir voyager dans le temps ou vers le futur. Tournez simplement le bouton
-        à la date souhaitée et appuyez sur "Go". Ne vous inquiétez plus des clés perdues ou
-        écouteurs oubliés avec cette solution simple mais abordable.`,
-      imgSrc: '/static/images/time-machine.jpg',
-      href: '/blog/the-time-machine',
+      title: 'Análise GraphQL vs REST',
+      description: `Comparação aprofundada entre APIs GraphQL e REST. Entenda quando usar cada abordagem, suas vantagens e desvantagens, e tome decisões informadas para seu próximo projeto de API.`,
+      imgSrc: '/static/images/logo.png',
+      href: '/pt-br/blog/graphql-vs-rest-quando-utilizar',
     },
   ],
 }

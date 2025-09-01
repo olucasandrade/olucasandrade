@@ -3,6 +3,7 @@ import Link from '@/components/mdxcomponents/Link'
 import Tag from '@/components/tag'
 import { formatDate } from 'pliny/utils/formatDate'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
+import Image from 'next/image'
 
 interface Post {
   slug: string
@@ -25,8 +26,17 @@ const PostList: React.FC<PostListProps> = ({ posts, locale, t, maxDisplay }) => 
   return (
     <ul className="divide-y divide-gray-200 dark:divide-gray-700">
       {!posts.length && <li>{t('noposts')}</li>}
-      {posts.slice(0, maxDisplay).map((post) => {
+      {posts.slice(0, maxDisplay).map((post, index) => {
         const { slug, date, title, summary, tags } = post
+        const decorativeImages = [
+          '/static/images/ocean.jpeg',
+          '/static/images/canada/lake.jpg',
+          '/static/images/canada/mountains.jpg',
+          '/static/images/canada/maple.jpg',
+          '/static/images/canada/toronto.jpg'
+        ]
+        const imageIndex = index % decorativeImages.length
+        
         return (
           <li key={slug} className="py-12">
             <article>
@@ -39,22 +49,32 @@ const PostList: React.FC<PostListProps> = ({ posts, locale, t, maxDisplay }) => 
                 </dl>
                 <div className="space-y-5 xl:col-span-3">
                   <div className="space-y-6">
-                    <div>
-                      <h2 className="text-2xl font-bold leading-8 tracking-tight">
-                        <Link
-                          href={`/${locale}/blog/${slug}`}
-                          className="text-gray-900 dark:text-gray-100"
-                        >
-                          {title}
-                        </Link>
-                      </h2>
-                      <ul className="flex flex-wrap">
-                        {tags.map((tag: string) => (
-                          <li key={tag}>
-                            <Tag text={tag} />
-                          </li>
-                        ))}
-                      </ul>
+                    <div className="flex flex-col space-y-4 md:flex-row md:space-x-4 md:space-y-0">
+                      <div className="flex-1">
+                        <h2 className="text-2xl font-bold leading-8 tracking-tight">
+                          <Link
+                            href={`/${locale}/blog/${slug}`}
+                            className="text-gray-900 dark:text-gray-100"
+                          >
+                            {title}
+                          </Link>
+                        </h2>
+                        <ul className="flex flex-wrap">
+                          {tags.map((tag: string) => (
+                            <li key={tag}>
+                              <Tag text={tag} />
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="relative h-24 w-32 flex-shrink-0 md:h-20 md:w-28">
+                        <Image
+                          src={decorativeImages[imageIndex]}
+                          alt="Decorative image"
+                          fill
+                          className="rounded-lg object-cover"
+                        />
+                      </div>
                     </div>
                     <div className="prose max-w-none text-gray-500 dark:text-gray-400">
                       {summary!.length > 149 ? `${summary!.substring(0, 149)}...` : summary}

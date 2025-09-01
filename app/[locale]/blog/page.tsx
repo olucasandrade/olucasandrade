@@ -1,5 +1,5 @@
 import { Metadata } from 'next'
-import ListLayout from '@/layouts/ListLayout'
+import InfiniteBlogList from '@/components/blog/InfiniteBlogList'
 import { allCoreContent, sortPosts } from 'pliny/utils/contentlayer'
 import { allBlogs } from 'contentlayer/generated'
 import { genPageMetadata } from 'app/[locale]/seo'
@@ -26,5 +26,5 @@ export default async function BlogPage({ params }: PageProps) {
   const posts = allCoreContent(sortPosts(allBlogs))
   const filteredPosts = posts.filter((post) => post.language === locale)
 
-  return <ListLayout params={{ locale }} posts={filteredPosts} title={t('all')} />
+  return <InfiniteBlogList posts={filteredPosts} locale={locale} title={t('all')} />
 }

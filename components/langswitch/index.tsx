@@ -77,7 +77,7 @@ const LangSwitch = () => {
               leaveTo="opacity-0 scale-95 translate-y-[10px]"
             >
               <MenuItems
-                className="absolute right-0 z-50 mt-2 w-12 origin-top-right divide-y divide-gray-100 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none dark:bg-gray-800"
+                className="absolute right-0 z-50 mt-2 w-32 origin-top-right divide-y divide-gray-100 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none dark:bg-gray-800 dark:divide-gray-600"
                 aria-orientation="vertical"
                 onBlur={() => setIsMenuOpen(false)}
               >
@@ -95,12 +95,14 @@ const LangSwitch = () => {
                               onClick={() => handleLinkClick(newLocale)}
                               className={`${
                                 focus
-                                  ? 'bg-gray-100 dark:bg-gray-600'
-                                  : 'hover:bg-gray-100 dark:hover:bg-gray-600'
-                              } rounded-md px-4 py-2 text-sm text-gray-700 hover:text-primary-500 dark:text-white dark:hover:text-primary-500`}
+                                  ? 'bg-primary-50 text-primary-600 dark:bg-primary-900 dark:text-primary-300'
+                                  : 'text-gray-700 hover:bg-primary-50 hover:text-primary-600 dark:text-white dark:hover:bg-primary-900 dark:hover:text-primary-300'
+                              } flex w-full items-center rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150`}
                               role="menuitem"
-                              style={{ display: 'block', width: '100%', textDecoration: 'none' }}
                             >
+                              <span className="mr-2 text-xs font-bold uppercase text-primary-500">
+                                {newLocale}
+                              </span>
                               {newLocale.charAt(0).toUpperCase() + newLocale.slice(1)}
                             </button>
                           )}

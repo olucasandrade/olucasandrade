@@ -91,7 +91,7 @@
 .token.function,
 .token.builtin,
 .token.char {
-  color: rgb(130, 170, 255);
+  color: rgb(130, 255, 170);
 }
 
 .token.selector,

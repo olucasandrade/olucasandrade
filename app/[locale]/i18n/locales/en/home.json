@@ -23,5 +23,10 @@
   "github": "View on GitHub",
   "draft": "Under Construction",
   "noposts": "No posts found",
-  "poststagged": "View posts tagged"
+  "poststagged": "View posts tagged",
+  "loading": "Loading...",
+  "postfound": "post found",
+  "postsfound": "posts found",
+  "withtags": "with tags:",
+  "clearfilters": "Clear filters"
 }
