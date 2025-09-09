@@ -49,7 +49,7 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
       : [
           {
             id: 'about',
-            name: locale === fallbackLng ? 'About' : 'À propos',
+            name: locale === fallbackLng ? 'About' : 'Sobre',
             keywords: '',
             shortcut: ['a'],
             section: locale === fallbackLng ? 'Navigate' : 'Naviguer',
@@ -72,7 +72,7 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
         defaultActions: [
           {
             id: 'home',
-            name: locale === fallbackLng ? 'Home' : 'Accueil',
+            name: locale === fallbackLng ? 'Home' : 'Início',
             keywords: '',
             shortcut: ['h'],
             section: navigationSection,
@@ -111,7 +111,7 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
           },
           {
             id: 'projects',
-            name: locale === fallbackLng ? 'Projects' : 'Projets',
+            name: locale === fallbackLng ? 'Projects' : 'Projetos',
             keywords: '',
             shortcut: ['p'],
             section: navigationSection,

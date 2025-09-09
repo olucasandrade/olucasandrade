@@ -3,10 +3,9 @@
 import siteMetadata from '@/data/siteMetadata'
 import SocialIcon from '@/components/social-icons'
 import { useState } from 'react'
-import { useParams, usePathname } from 'next/navigation'
-import { useTranslation } from 'app/[locale]/i18n/client'
+import { usePathname } from 'next/navigation'
+import { useLocaleTranslation, useLocale } from '@/components/locale/LocaleProvider'
 import { fallbackLng, secondLng } from 'app/[locale]/i18n/locales'
-import { LocaleTypes } from 'app/[locale]/i18n/settings'
 
 type ShareProps = { title: string; description?: string; slug: string; className?: string }
 
@@ -20,8 +19,8 @@ const Share = ({ title, description, slug, className }: ShareProps) => {
     setTimeout(() => setCopied(false), 10 * 60 * 1000) // Reset copied state after 10 minutes
   }
 
-  const locale = useParams()?.locale as LocaleTypes
-  const { t } = useTranslation(locale, 'common')
+  const { locale } = useLocale()
+  const { t } = useLocaleTranslation('common')
   const pathname = usePathname()
   const pathSegments = pathname!.split('/')
 

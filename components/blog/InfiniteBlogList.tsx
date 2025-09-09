@@ -10,6 +10,8 @@ import Tag from '@/components/tag'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import Image from 'next/image'
+import BlogStatsDisplay from './BlogStatsDisplay'
+import { useBlogStats } from '@/hooks/useBlogStats'
 // Using a simple SVG icon instead of Heroicons to avoid dependency
 const SearchIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -47,6 +49,9 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [displayedPosts, setDisplayedPosts] = useState(POSTS_PER_LOAD)
   const [isLoading, setIsLoading] = useState(false)
+  
+  // Fetch blog stats for all posts
+  const { stats: blogStats } = useBlogStats(locale)
 
   // Get all unique tags
   const allTags = useMemo(() => {
@@ -231,12 +236,19 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                   </p>
                 </div>
                 <div className="flex items-center justify-between pt-2">
-                  <time
-                    dateTime={date}
-                    className="text-sm text-gray-500 dark:text-gray-400"
-                  >
-                    {formatDate(date, locale)}
-                  </time>
+                  <div className="flex items-center gap-4">
+                    <time
+                      dateTime={date}
+                      className="text-sm text-gray-500 dark:text-gray-400"
+                    >
+                      {formatDate(date, locale)}
+                    </time>
+                    <BlogStatsDisplay 
+                      likes={blogStats[slug]?.likes || 0}
+                      views={blogStats[slug]?.views || 0}
+                      size="sm"
+                    />
+                  </div>
                   <Link
                     href={`/${locale}/blog/${slug}`}
                     className="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400 text-sm font-medium transition-colors"

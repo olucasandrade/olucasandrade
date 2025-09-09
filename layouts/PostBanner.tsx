@@ -15,6 +15,7 @@ import Share from '@/components/share'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import { Toc } from 'pliny/mdx-plugins'
 import Sidetoc from '@/components/sidetoc'
+import BlogStats from '@/components/blog/BlogStats'
 
 interface PostBannerProps {
   content: CoreContent<Blog>
@@ -62,6 +63,12 @@ export default function PostMinimal({
             )}
             <div className="prose max-w-none py-4 dark:prose-invert">{children}</div>
             <Share title={title} slug={slug} />
+            
+            {/* Blog Stats (Likes & Views) */}
+            <div className="flex justify-center py-6">
+              <BlogStats slug={slug} locale={locale} />
+            </div>
+            
             <div className="pb-6 pt-6 text-center text-gray-700 dark:text-gray-300" id="comment">
               {siteMetadata.iswaline === true && <WalineComments />}
               {siteMetadata.comments && siteMetadata.iscomments === true && (

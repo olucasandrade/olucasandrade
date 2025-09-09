@@ -10,6 +10,7 @@ import Footer from '@/components/navigation/Footer'
 import siteMetadata from '@/data/siteMetadata'
 import { maintitle, maindescription } from '@/data/localeMetadata'
 import { ThemeProvider } from '@/components/theme/ThemeContext'
+import { LocaleProvider } from '@/components/locale/LocaleProvider'
 import { Metadata } from 'next'
 import { dir } from 'i18next'
 import { LocaleTypes, locales } from './i18n/settings'
@@ -102,18 +103,20 @@ export default async function RootLayout({
       <link rel="alternate" type="application/rss+xml" href="/feed.xml" />
       <body className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-900 dark:text-white">
 
-        <ThemeProvider>
-          <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
-          <SectionContainer>
-            <div className="flex h-screen flex-col justify-between font-sans">
-              <SearchProvider>
-                <Header />
-                <main className="mb-auto">{children}</main>
-              </SearchProvider>
-              <Footer />
-            </div>
-          </SectionContainer>
-        </ThemeProvider>
+        <LocaleProvider initialLocale={locale}>
+          <ThemeProvider>
+            <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
+            <SectionContainer>
+              <div className="flex h-screen flex-col justify-between font-sans">
+                <SearchProvider>
+                  <Header />
+                  <main className="mb-auto">{children}</main>
+                </SearchProvider>
+                <Footer />
+              </div>
+            </SectionContainer>
+          </ThemeProvider>
+        </LocaleProvider>
       </body>
     </html>
   )

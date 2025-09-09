@@ -21,6 +21,14 @@
       "@/data/*": ["data/*"],
       "@/layouts/*": ["layouts/*"],
       "@/css/*": ["css/*"],
+      "@/hooks/*": ["hooks/*"],
+      "@/lib/*": ["lib/*"],
+      "@/app/*": ["app/*"],
+      "@/i18n/*": ["i18n/*"],
+      "@/public/*": ["public/*"],
+      "@/types/*": ["types/*"],
+      "@/utils/*": ["utils/*"],
+      "@/styles/*": ["styles/*"],
       "contentlayer/generated": ["./.contentlayer/generated"]
     },
     "plugins": [

@@ -25,18 +25,18 @@ const projectsData: ProjectsData = {
     },
   ],
 
-  'pt-br': [
+  'pt': [
     {
       title: 'Guia de Decorators em Python',
       description: `Um guia completo para entender e implementar decorators em Python. Aprenda como potencializar seu código com exemplos práticos e boas práticas para decorators no desenvolvimento Python.`,
       imgSrc: '/static/images/logo.png',
-      href: '/pt-br/blog/potencializando-codigo-com-decorators-python',
+      href: '/pt/blog/potencializando-codigo-com-decorators-python',
     },
     {
       title: 'Análise GraphQL vs REST',
       description: `Comparação aprofundada entre APIs GraphQL e REST. Entenda quando usar cada abordagem, suas vantagens e desvantagens, e tome decisões informadas para seu próximo projeto de API.`,
       imgSrc: '/static/images/logo.png',
-      href: '/pt-br/blog/graphql-vs-rest-quando-utilizar',
+      href: '/pt/blog/graphql-vs-rest-quando-utilizar',
     },
   ],
 }

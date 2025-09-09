@@ -16,6 +16,7 @@ import { PostSeriesBox } from '@/components/seriescard'
 import Share from '@/components/share'
 import { Toc } from 'pliny/mdx-plugins'
 import Sidetoc from '@/components/sidetoc'
+import BlogStats from '@/components/blog/BlogStats'
 
 const editUrl = (path) => `${siteMetadata.siteRepo}/blob/main/data/${path}`
 const discussUrl = (path) =>
@@ -126,6 +127,12 @@ export default async function PostLayout({
                 <Link href={editUrl(filePath)}>{t('github')}</Link>
               </div>
               <Share title={title} slug={slug} />
+              
+              {/* Blog Stats (Likes & Views) */}
+              <div className="flex justify-center py-6">
+                <BlogStats slug={slug} locale={locale} />
+              </div>
+              
               <div
                 className="mt-10 pb-6 pt-6 text-center text-gray-700 dark:text-gray-300"
                 id="comment"

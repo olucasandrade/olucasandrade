@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useMemo } from 'react'
-import { usePathname, useParams, useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useOuterClick } from '../util/useOuterClick'
 import { useTagStore } from '@/components/util/useTagStore'
 import { LocaleTypes, locales } from 'app/[locale]/i18n/settings'
+import { useLocale } from '@/components/locale/LocaleProvider'
 import {
   Menu,
   Transition,
@@ -16,8 +17,7 @@ import { ChevronDownIcon } from './icon'
 
 const LangSwitch = () => {
   const pathname = usePathname()
-  const params = useParams()
-  const locale = (params.locale as string) || ''
+  const { locale, setLocale } = useLocale()
   const router = useRouter()
   const setSelectedTag = useTagStore((state) => state.setSelectedTag)
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false)
@@ -43,10 +43,11 @@ const LangSwitch = () => {
     (newLocale: string) => {
       setSelectedTag('')
       const resolvedUrl = handleLocaleChange(newLocale)
+      setLocale(newLocale as LocaleTypes) // Update the locale context
       router.push(resolvedUrl)
       setIsMenuOpen(false)
     },
-    [handleLocaleChange, router, setSelectedTag]
+    [handleLocaleChange, router, setSelectedTag, setLocale]
   )
 
   const currentLocale = useMemo(() => locale.charAt(0).toUpperCase() + locale.slice(1), [locale])

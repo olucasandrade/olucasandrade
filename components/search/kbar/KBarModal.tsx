@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useParams, usePathname, useRouter } from 'next/navigation'
-import { useTranslation } from 'app/[locale]/i18n/client'
+import { usePathname, useRouter } from 'next/navigation'
+import { useLocaleTranslation, useLocale } from '@/components/locale/LocaleProvider'
 import { useTheme, Theme } from '@/components/theme/ThemeContext'
 import { useTagStore } from '@/components/util/useTagStore'
 import { useContactForm } from '@/components/formspree/useContactForm'
@@ -22,8 +22,8 @@ interface KBarModalProps {
 }
 
 export const KBarModal: React.FC<KBarModalProps> = ({ actions, isLoading }) => {
-  const locale = useParams()?.locale as LocaleTypes
-  const { t } = useTranslation(locale, 'common')
+  const { locale } = useLocale()
+  const { t } = useLocaleTranslation('common')
   const pathname = usePathname()
   const router = useRouter()
   const setSelectedTag = useTagStore((state) => state.setSelectedTag)
