@@ -13,6 +13,8 @@ import siteMetadata from '@/data/siteMetadata'
 import { maintitle } from '@/data/localeMetadata'
 import { notFound } from 'next/navigation'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
+import Giscus from '@giscus/react'
+import Comments from '@/components/comments/Comments'
 
 interface PageProps {
   params: Promise<{
@@ -167,6 +169,7 @@ export default async function Page({ params }: PageProps) {
         params={{ locale }}
       >
         <MDXLayoutRenderer code={post.body.code} components={components} toc={post.toc} />
+        <Comments post={post} locale={locale} />
       </Layout>
     </>
   )

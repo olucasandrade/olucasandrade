@@ -2,10 +2,8 @@ import { ReactNode } from 'react'
 import { CoreContent } from 'pliny/utils/contentlayer'
 import type { Blog, Authors } from 'contentlayer/generated'
 import Comments from '@/components/comments/Comments'
-import WalineComments from '@/components/comments/walinecomponents/walineComments'
 import Link from '@/components/mdxcomponents/Link'
 import PageTitle from '@/components/PageTitle'
-import SectionContainer from '@/components/SectionContainer'
 import Image from '@/components/mdxcomponents/Image'
 import Tag from '@/components/tag'
 import siteMetadata from '@/data/siteMetadata'
@@ -55,7 +53,7 @@ export default async function PostLayout({
       <ScrollTopAndComment />
       <Sidetoc toc={tableOfContents} />
       <article>
-        <div className="xl:divide-y xl:divide-gray-200 xl:dark:divide-gray-700">
+        <div>
           <header className="pt-6 xl:pb-6">
             <div className="space-y-1 text-center">
               <dl className="space-y-10">
@@ -72,8 +70,12 @@ export default async function PostLayout({
                 <PageTitle>{title}</PageTitle>
               </div>
             </div>
+            {/* Blog Stats (Likes & Views) */}
+            <div className="flex justify-center py-6">
+              <BlogStats slug={slug} locale={locale} />
+            </div>
           </header>
-          <div className="grid-rows-[auto_1fr] divide-y divide-gray-200 pb-8 dark:divide-gray-700 xl:grid xl:grid-cols-4 xl:gap-x-6 xl:divide-y-0">
+          <div className="grid-rows-[auto_1fr] pb-8  xl:grid xl:grid-cols-4 xl:gap-x-6">
             <dl className="pb-10 pt-6 xl:border-b xl:border-gray-200 xl:pt-11 xl:dark:border-gray-700">
               <dt className="sr-only">{t('authors')}</dt>
               <dd>
@@ -112,13 +114,13 @@ export default async function PostLayout({
                 </ul>
               </dd>
             </dl>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700 xl:col-span-3 xl:row-span-2 xl:pb-0">
+            <div className="xl:col-span-3 xl:row-span-2 xl:pb-0">
               {series && (
                 <div className="not-prose mt-4">
                   <PostSeriesBox data={series} />
                 </div>
               )}
-              <div className="prose max-w-none pb-8 pt-10 dark:prose-invert">{children}</div>
+              <div className="prose max-w-none pb-8 pt-10 dark:prose-invert border-b border-gray-200 dark:border-gray-700">{children}</div>
               <div className="pb-6 pt-6 text-sm text-gray-700 dark:text-gray-300">
                 <Link href={discussUrl(path)} rel="nofollow">
                   {t('twitter')}
@@ -127,21 +129,6 @@ export default async function PostLayout({
                 <Link href={editUrl(filePath)}>{t('github')}</Link>
               </div>
               <Share title={title} slug={slug} />
-              
-              {/* Blog Stats (Likes & Views) */}
-              <div className="flex justify-center py-6">
-                <BlogStats slug={slug} locale={locale} />
-              </div>
-              
-              <div
-                className="mt-10 pb-6 pt-6 text-center text-gray-700 dark:text-gray-300"
-                id="comment"
-              >
-                {siteMetadata.iswaline === true && <WalineComments />}
-                {siteMetadata.comments && siteMetadata.iscomments === true && (
-                  <Comments slug={slug} />
-                )}
-              </div>
             </div>
             <footer>
               <div className="divide-gray-200 text-sm font-medium leading-5 dark:divide-gray-700 xl:col-start-1 xl:row-start-2 xl:divide-y">

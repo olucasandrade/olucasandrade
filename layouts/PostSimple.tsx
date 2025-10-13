@@ -2,7 +2,6 @@ import { ReactNode } from 'react'
 import { formatDate } from 'pliny/utils/formatDate'
 import { CoreContent } from 'pliny/utils/contentlayer'
 import type { Blog } from 'contentlayer/generated'
-import WalineComments from '@/components/comments/walinecomponents/walineComments'
 import Comments from '@/components/comments/Comments'
 import Link from '@/components/mdxcomponents/Link'
 import PageTitle from '@/components/PageTitle'
@@ -66,12 +65,6 @@ export default async function PostLayout({
                 <div className="prose max-w-none pb-8 pt-10 dark:prose-invert">{children}</div>
               </div>
               <Share title={title} slug={slug} />
-              <div className="pb-6 pt-6 text-center text-gray-700 dark:text-gray-300" id="comment">
-                {siteMetadata.iswaline === true && <WalineComments />}
-                {siteMetadata.comments && siteMetadata.iscomments === true && (
-                  <Comments slug={slug} />
-                )}
-              </div>
               <footer>
                 <div className="flex flex-col text-sm font-medium sm:flex-row sm:justify-between sm:text-base">
                   {prev && prev.slug && (
