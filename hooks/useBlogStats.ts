@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 
 export interface BlogStatsMap {
   [slug: string]: {
-    likes: number
     views: number
   }
 }

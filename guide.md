@@ -16,7 +16,7 @@ Lucas possesses a comprehensive skill set that spans both frontend and backend d
 
 ## Career Highlights
 
-Currently, Lucas is employed as a Fullstack Developer at Geekie, where he is actively involved in developing new features, maintaining environments, and resolving bugs. His professional journey has been marked by continuous learning and adaptation to evolving technological landscapes.
+Currently, Lucas is employed as a Software Engineer at Geekie, where he is actively involved in developing new features, maintaining environments, and resolving bugs. His professional journey has been marked by continuous learning and adaptation to evolving technological landscapes.
 
 ## Personal Philosophy
 
