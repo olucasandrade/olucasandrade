@@ -1,14 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getPostStats, hasUserLiked } from '@/lib/blog-stats'
-
-// Generate a simple user ID based on IP and User-Agent
-function generateUserId(request: NextRequest): string {
-  const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown'
-  const userAgent = request.headers.get('user-agent') || 'unknown'
-  
-  // Create a simple hash-like ID (in production, consider using a proper hashing function)
-  return Buffer.from(`${ip}-${userAgent}`).toString('base64').slice(0, 16)
-}
+import { getPostStats } from '@/lib/blog-stats'
 
 export async function GET(
   request: NextRequest,
@@ -17,15 +8,10 @@ export async function GET(
   try {
     const { slug } = await params
     const decodedSlug = decodeURIComponent(slug)
-    const userId = generateUserId(request)
     
-    const stats = getPostStats(decodedSlug)
-    const isLiked = hasUserLiked(decodedSlug, userId)
+    const stats = await getPostStats(decodedSlug)
     
-    return NextResponse.json({
-      ...stats,
-      isLiked,
-    })
+    return NextResponse.json(stats)
   } catch (error) {
     console.error('Error getting blog stats:', error)
     return NextResponse.json(

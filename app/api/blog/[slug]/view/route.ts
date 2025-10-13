@@ -9,7 +9,7 @@ export async function POST(
     const { slug } = await params
     const decodedSlug = decodeURIComponent(slug)
     
-    const result = incrementViews(decodedSlug)
+    const result = await incrementViews(decodedSlug)
     
     return NextResponse.json(result)
   } catch (error) {

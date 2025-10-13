@@ -3,7 +3,7 @@ import { getAllPostsStats } from '@/lib/blog-stats'
 
 export async function GET() {
   try {
-    const stats = getAllPostsStats()
+    const stats = await getAllPostsStats()
     return NextResponse.json(stats)
   } catch (error) {
     console.error('Error getting all blog stats:', error)
