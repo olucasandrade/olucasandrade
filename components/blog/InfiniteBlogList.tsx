@@ -243,11 +243,6 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                     >
                       {formatDate(date, locale)}
                     </time>
-                    <BlogStatsDisplay 
-                      likes={blogStats[slug]?.likes || 0}
-                      views={blogStats[slug]?.views || 0}
-                      size="sm"
-                    />
                   </div>
                   <Link
                     href={`/${locale}/blog/${slug}`}
@@ -255,6 +250,12 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                   >
                     {t('more')} &rarr;
                   </Link>
+                </div>
+                <div>
+                  <BlogStatsDisplay 
+                      views={blogStats[`blog-stats:${slug}`]?.views || 0}
+                      size="sm"
+                  />
                 </div>
               </motion.article>
             )
