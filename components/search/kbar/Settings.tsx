@@ -27,7 +27,7 @@ const Settings: React.FC<SettingsProps> = ({ t, handleThemeChange, handleLinkCli
         </div>
         <div className="space-y-2">
           <LangButton t={t} handleLinkClick={handleLinkClick} locale={fallbackLng} lang="english" />
-          <LangButton t={t} handleLinkClick={handleLinkClick} locale={secondLng} lang="french" />
+          <LangButton t={t} handleLinkClick={handleLinkClick} locale={secondLng} lang="português" />
         </div>
       </div>
       <div className="space-y-3">

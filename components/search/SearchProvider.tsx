@@ -51,8 +51,7 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
             id: 'about',
             name: locale === fallbackLng ? 'About' : 'Sobre',
             keywords: '',
-            shortcut: ['a'],
-            section: locale === fallbackLng ? 'Navigate' : 'Naviguer',
+            section: locale === fallbackLng ? 'Navigate' : 'Navegar',
             perform: () => router.push(`/${locale}/about`),
             icon: (
               <i>
@@ -63,7 +62,7 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
         ]),
   ]
   /* issue when using regular translations, this is a workaround to show how to implement section titles */
-  const navigationSection = locale === fallbackLng ? 'Navigate' : 'Naviguer'
+  const navigationSection = locale === fallbackLng ? 'Navigate' : 'Navegar'
   return (
     <KBarSearchProvider
       kbarConfig={{
@@ -74,7 +73,6 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
             id: 'home',
             name: locale === fallbackLng ? 'Home' : 'Início',
             keywords: '',
-            shortcut: ['h'],
             section: navigationSection,
             perform: () => router.push(`/${locale}`),
             icon: (
@@ -87,7 +85,6 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
             id: 'blog',
             name: locale === fallbackLng ? 'Blog' : 'Blog',
             keywords: '',
-            shortcut: ['b'],
             section: navigationSection,
             perform: () => router.push(`/${locale}/blog`),
             icon: (
@@ -100,7 +97,6 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
             id: 'tags',
             name: locale === fallbackLng ? 'Tags' : 'Tags',
             keywords: '',
-            shortcut: ['t'],
             section: navigationSection,
             perform: () => router.push(`/${locale}/tags`),
             icon: (
@@ -113,7 +109,6 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
             id: 'projects',
             name: locale === fallbackLng ? 'Projects' : 'Projetos',
             keywords: '',
-            shortcut: ['p'],
             section: navigationSection,
             perform: () => router.push(`/${locale}/projects`),
             icon: (

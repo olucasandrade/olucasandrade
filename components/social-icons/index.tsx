@@ -18,17 +18,9 @@ import siteMetadata from '@/data/siteMetadata'
 const components = {
   mail: Mail,
   github: Github,
-  facebook: Facebook,
-  youtube: Youtube,
   linkedin: Linkedin,
   twitter: Twitter,
-  x: X,
-  mastodon: Mastodon,
   whatsapp: Whatsapp,
-  telegram: Telegram,
-  threads: Threads,
-  instagram: Instagram,
-  reddit: Reddit,
 }
 
 type SocialIconProps = {
