@@ -75,7 +75,7 @@ export default async function PostLayout({
               <BlogStats slug={slug} locale={locale} />
             </div>
           </header>
-          <div className="grid-rows-[auto_1fr] pb-8  xl:grid xl:grid-cols-4 xl:gap-x-6">
+          <div className="grid-rows-[auto_1fr] pb-8 xl:grid xl:grid-cols-4 xl:gap-x-6">
             <dl className="pb-10 pt-6 xl:border-b xl:border-gray-200 xl:pt-11 xl:dark:border-gray-700">
               <dt className="sr-only">{t('authors')}</dt>
               <dd>
@@ -120,7 +120,9 @@ export default async function PostLayout({
                   <PostSeriesBox data={series} />
                 </div>
               )}
-              <div className="prose max-w-none pb-8 pt-10 dark:prose-invert border-b border-gray-200 dark:border-gray-700">{children}</div>
+              <div className="prose max-w-none border-b border-gray-200 pb-8 pt-10 dark:prose-invert dark:border-gray-700">
+                {children}
+              </div>
               <div className="pb-6 pt-6 text-sm text-gray-700 dark:text-gray-300">
                 <Link href={discussUrl(path)} rel="nofollow">
                   {t('twitter')}

@@ -8,10 +8,10 @@ interface BlogStatsDisplayProps {
   size?: 'sm' | 'md'
 }
 
-export default function BlogStatsDisplay({ 
-  views, 
-  className = '', 
-  size = 'sm' 
+export default function BlogStatsDisplay({
+  views,
+  className = '',
+  size = 'sm',
 }: BlogStatsDisplayProps) {
   const iconSize = size === 'sm' ? 'h-4 w-4' : 'h-5 w-5'
   const textSize = size === 'sm' ? 'text-xs' : 'text-sm'

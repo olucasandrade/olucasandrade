@@ -33,10 +33,9 @@ const PostList: React.FC<PostListProps> = ({ posts, locale, t, maxDisplay }) => 
           '/static/images/canada/lake.jpg',
           '/static/images/canada/mountains.jpg',
           '/static/images/canada/maple.jpg',
-          '/static/images/canada/toronto.jpg'
+          '/static/images/canada/toronto.jpg',
         ]
         const imageIndex = index % decorativeImages.length
-        
         return (
           <li key={slug} className="py-12">
             <article>

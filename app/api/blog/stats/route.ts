@@ -7,9 +7,6 @@ export async function GET() {
     return NextResponse.json(stats)
   } catch (error) {
     console.error('Error getting all blog stats:', error)
-    return NextResponse.json(
-      { error: 'Failed to get blog stats' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to get blog stats' }, { status: 500 })
   }
 }

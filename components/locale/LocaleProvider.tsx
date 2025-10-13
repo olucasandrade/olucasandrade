@@ -39,11 +39,7 @@ export function LocaleProvider({ children, initialLocale }: LocaleProviderProps)
     setLocale,
   }
 
-  return (
-    <LocaleContext.Provider value={contextValue}>
-      {children}
-    </LocaleContext.Provider>
-  )
+  return <LocaleContext.Provider value={contextValue}>{children}</LocaleContext.Provider>
 }
 
 export function useLocale(): LocaleContextType {

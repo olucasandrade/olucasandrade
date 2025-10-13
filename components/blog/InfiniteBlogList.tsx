@@ -14,8 +14,13 @@ import BlogStatsDisplay from './BlogStatsDisplay'
 import { useBlogStats } from '@/hooks/useBlogStats'
 // Using a simple SVG icon instead of Heroicons to avoid dependency
 const SearchIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+    />
   </svg>
 )
 
@@ -49,15 +54,15 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [displayedPosts, setDisplayedPosts] = useState(POSTS_PER_LOAD)
   const [isLoading, setIsLoading] = useState(false)
-  
+
   // Fetch blog stats for all posts
   const { stats: blogStats } = useBlogStats(locale)
 
   // Get all unique tags
   const allTags = useMemo(() => {
     const tagSet = new Set<string>()
-    posts.forEach(post => {
-      post.tags?.forEach(tag => tagSet.add(tag))
+    posts.forEach((post) => {
+      post.tags?.forEach((tag) => tagSet.add(tag))
     })
     return Array.from(tagSet).sort()
   }, [posts])
@@ -79,10 +84,8 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
     // Filter by selected tags
     if (selectedTags.length > 0) {
-      filtered = filtered.filter(post => 
-        selectedTags.some(selectedTag => 
-          post.tags?.includes(selectedTag)
-        )
+      filtered = filtered.filter((post) =>
+        selectedTags.some((selectedTag) => post.tags?.includes(selectedTag))
       )
     }
 
@@ -96,7 +99,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
   // Load more posts
   const loadMore = useCallback(() => {
     if (isLoading || !hasMore) return
-    
+
     setIsLoading(true)
     // Simulate loading delay for better UX
     setTimeout(() => {
@@ -112,11 +115,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
   // Handle tag selection
   const toggleTag = useCallback((tag: string) => {
-    setSelectedTags(prev => 
-      prev.includes(tag) 
-        ? prev.filter(t => t !== tag)
-        : [...prev, tag]
-    )
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
   }, [])
 
   const clearFilters = useCallback(() => {
@@ -143,16 +142,16 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
             </h1>
           </div>
         </div>
-        
+
         {/* Search Input */}
         <div className="relative max-w-lg">
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
             <SearchIcon />
           </div>
           <input
             type="text"
             placeholder={t('searchposts')}
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white dark:bg-gray-800 dark:border-gray-600 placeholder-gray-500 dark:placeholder-gray-400 text-gray-900 dark:text-gray-100 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+            className="block w-full rounded-md border border-gray-300 bg-white py-2 pl-10 pr-3 leading-5 text-gray-900 placeholder-gray-500 focus:border-primary-500 focus:placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-400 sm:text-sm"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -165,24 +164,23 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
               <button
                 key={tag}
                 onClick={() => toggleTag(tag)}
-                className={`px-3 py-1 text-sm rounded-full border transition-colors ${
+                className={`rounded-full border px-3 py-1 text-sm transition-colors ${
                   selectedTags.includes(tag)
-                    ? 'bg-primary-500 text-white border-primary-500'
-                    : 'bg-gray-100 text-gray-700 border-gray-300 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-600'
+                    ? 'border-primary-500 bg-primary-500 text-white'
+                    : 'border-gray-300 bg-gray-100 text-gray-700 hover:bg-gray-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
                 }`}
               >
                 {tag}
               </button>
             ))}
           </div>
-          
+
           {(searchTerm || selectedTags.length > 0) && (
             <div className="flex items-center justify-between">
               <p className="text-sm text-gray-600 dark:text-gray-400">
-                {filteredPosts.length === 1 
-                  ? `1 ${t('postfound')}` 
-                  : `${filteredPosts.length} ${t('postsfound')}`
-                }
+                {filteredPosts.length === 1
+                  ? `1 ${t('postfound')}`
+                  : `${filteredPosts.length} ${t('postsfound')}`}
                 {selectedTags.length > 0 && (
                   <span className="ml-2">
                     {t('withtags')} {selectedTags.join(', ')}
@@ -213,14 +211,14 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
               <motion.article
                 key={slug}
                 variants={item}
-                className="group relative flex flex-col space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-6 hover:border-primary-500 transition-all duration-200 hover:shadow-lg"
+                className="group relative flex flex-col space-y-2 rounded-lg border border-gray-200 p-6 transition-all duration-200 hover:border-primary-500 hover:shadow-lg dark:border-gray-700"
               >
                 <div className="space-y-3">
                   <div className="space-y-2">
                     <h2 className="text-xl font-bold leading-8 tracking-tight">
                       <Link
                         href={`/${locale}/blog/${slug}`}
-                        className="text-gray-900 dark:text-gray-100 group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors"
+                        className="transition-colors group-hover:text-primary-600 dark:text-gray-100 dark:group-hover:text-primary-400"
                       >
                         {title}
                       </Link>
@@ -231,31 +229,23 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                       ))}
                     </div>
                   </div>
-                  <p className="text-gray-500 dark:text-gray-400 line-clamp-3">
-                    {summary}
-                  </p>
+                  <p className="line-clamp-3 text-gray-500 dark:text-gray-400">{summary}</p>
                 </div>
                 <div className="flex items-center justify-between pt-2">
                   <div className="flex items-center gap-4">
-                    <time
-                      dateTime={date}
-                      className="text-sm text-gray-500 dark:text-gray-400"
-                    >
+                    <time dateTime={date} className="text-sm text-gray-500 dark:text-gray-400">
                       {formatDate(date, locale)}
                     </time>
                   </div>
                   <Link
                     href={`/${locale}/blog/${slug}`}
-                    className="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400 text-sm font-medium transition-colors"
+                    className="text-sm font-medium text-primary-500 transition-colors hover:text-primary-600 dark:hover:text-primary-400"
                   >
                     {t('more')} &rarr;
                   </Link>
                 </div>
                 <div>
-                  <BlogStatsDisplay 
-                      views={blogStats[`blog-stats:${slug}`]?.views || 0}
-                      size="sm"
-                  />
+                  <BlogStatsDisplay views={blogStats[`blog-stats:${slug}`]?.views || 0} size="sm" />
                 </div>
               </motion.article>
             )
@@ -264,24 +254,22 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
         {/* No posts found */}
         {filteredPosts.length === 0 && searchTerm && (
-          <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400 text-lg">
-              {t('noposts')}
-            </p>
+          <div className="py-12 text-center">
+            <p className="text-lg text-gray-500 dark:text-gray-400">{t('noposts')}</p>
           </div>
         )}
 
         {/* Load More Button */}
         {hasMore && (
-          <div className="flex justify-center mt-12">
+          <div className="mt-12 flex justify-center">
             <button
               onClick={loadMore}
               disabled={isLoading}
-              className="px-6 py-3 bg-primary-500 hover:bg-primary-600 disabled:bg-primary-400 text-white font-medium rounded-lg transition-colors duration-200 disabled:cursor-not-allowed"
+              className="rounded-lg bg-primary-500 px-6 py-3 font-medium text-white transition-colors duration-200 hover:bg-primary-600 disabled:cursor-not-allowed disabled:bg-primary-400"
             >
               {isLoading ? (
                 <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
                   <span>{t('loading')}</span>
                 </div>
               ) : (

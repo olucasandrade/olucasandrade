@@ -5,23 +5,25 @@ import Giscus from '@giscus/react'
 import { Blog } from 'contentlayer/generated'
 
 type CommentsProps = {
-  post: Blog;
+  post: Blog
   locale: string
 }
 
 export default function Comments({ post, locale }: CommentsProps) {
-  return         <Giscus
-  id="comments"
-  repo="olucasandrade/olucasandrade"
-  repoId="1048676460"
-  category="Posts"
-  mapping="specific"
-  term={post.title}
-  reactionsEnabled="1"
-  emitMetadata="0"
-  inputPosition="top"
-  theme={siteMetadata.theme}
-  lang={locale}
-  loading="lazy"
-/>
+  return (
+    <Giscus
+      id="comments"
+      repo="olucasandrade/olucasandrade"
+      repoId="1048676460"
+      category="Posts"
+      mapping="specific"
+      term={post.title}
+      reactionsEnabled="1"
+      emitMetadata="0"
+      inputPosition="top"
+      theme={siteMetadata.theme}
+      lang={locale}
+      loading="lazy"
+    />
+  )
 }

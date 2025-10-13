@@ -14,11 +14,11 @@ interface StatsData {
   views: number
 }
 
-export default function BlogStats({ 
-  slug, 
-  locale, 
-  className = '', 
-  showLabels = true 
+export default function BlogStats({
+  slug,
+  locale,
+  className = '',
+  showLabels = true,
 }: BlogStatsProps) {
   const [stats, setStats] = useState<StatsData>({ views: 0 })
   const [isLoading, setIsLoading] = useState(true)
@@ -52,7 +52,7 @@ export default function BlogStats({
     return (
       <div className={`flex items-center gap-6 ${className}`}>
         <div className="flex items-center gap-1">
-          <EyeIcon className="h-5 w-5 text-gray-400 animate-pulse" />
+          <EyeIcon className="h-5 w-5 animate-pulse text-gray-400" />
           <span className="text-sm text-gray-500">--</span>
         </div>
       </div>
@@ -66,9 +66,7 @@ export default function BlogStats({
         <EyeIcon className="h-5 w-5" />
         <span className="text-sm font-medium">{stats.views}</span>
         {showLabels && (
-          <span className="text-sm hidden sm:inline">
-            {stats.views === 1 ? 'View' : 'Views'}
-          </span>
+          <span className="hidden text-sm sm:inline">{stats.views === 1 ? 'View' : 'Views'}</span>
         )}
       </div>
     </div>

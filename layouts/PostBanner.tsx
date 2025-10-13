@@ -62,7 +62,7 @@ export default function PostMinimal({
             )}
             <div className="prose max-w-none py-4 dark:prose-invert">{children}</div>
             <Share title={title} slug={slug} />
-            
+
             {/* Blog Stats (Likes & Views) */}
             <div className="flex justify-center py-6">
               <BlogStats slug={slug} locale={locale} />

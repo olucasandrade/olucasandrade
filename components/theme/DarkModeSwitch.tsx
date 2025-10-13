@@ -78,18 +78,18 @@ export const DarkModeSwitch: React.FC<Props> = ({
     transform: svg.transform,
     config: animationProperties.springConfig,
   })
-  
+
   const centerCircleProps = useSpring({
     r: circle.r,
     config: animationProperties.springConfig,
   })
-  
+
   const maskedCircleProps = useSpring({
     cx: mask.cx,
     cy: mask.cy,
     config: animationProperties.springConfig,
   })
-  
+
   const linesProps = useSpring({
     opacity: lines.opacity,
     config: animationProperties.springConfig,
@@ -126,12 +126,7 @@ export const DarkModeSwitch: React.FC<Props> = ({
       >
         <mask id={uniqueMaskId}>
           <rect x="0" y="0" width="100%" height="100%" fill="white" />
-          <AnimatedCircle
-            cx={maskedCircleProps.cx}
-            cy={maskedCircleProps.cy}
-            r="9"
-            fill="black"
-          />
+          <AnimatedCircle cx={maskedCircleProps.cx} cy={maskedCircleProps.cy} r="9" fill="black" />
         </mask>
 
         <AnimatedCircle

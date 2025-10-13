@@ -8,15 +8,12 @@ export async function POST(
   try {
     const { slug } = await params
     const decodedSlug = decodeURIComponent(slug)
-    
+
     const result = await incrementViews(decodedSlug)
-    
+
     return NextResponse.json(result)
   } catch (error) {
     console.error('Error incrementing views:', error)
-    return NextResponse.json(
-      { error: 'Failed to increment views' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to increment views' }, { status: 500 })
   }
 }
