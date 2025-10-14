@@ -12,7 +12,7 @@ type ProjectsData = {
 const projectsData: ProjectsData = {
   en: [
     {
-      title: 'Yeon Music Platform',
+      title: 'Yeon',
       description: `A comprehensive platform for artists to manage their musical career, maximize earnings, and connect with fans. It offers smart management, fan engagement, direct monetization, crowdfunding tools, and an AI-assisted release planner.`, 
       imgSrc: '/static/images/yeon_logo.webp',
       href: 'https://yeon.live',
@@ -51,39 +51,39 @@ const projectsData: ProjectsData = {
 
   'pt': [
     {
-      title: 'Plataforma Yeon Music',
+      title: 'Yeon',
       description: `Uma plataforma completa para artistas gerenciarem sua carreira musical, maximizarem ganhos e se conectarem com fãs. Oferece gestão inteligente, engajamento de fãs, monetização direta, ferramentas de crowdfunding e um planejador de lançamentos assistido por IA.`, 
-      imgSrc: '/static/images/logo.png',
+      imgSrc: '/static/images/yeon_logo.webp',
       href: 'https://yeon.live',
     },
     {
       title: 'Trevo - Proxy CORS e Ferramenta de Teste de API',
       description: `Trevo é uma API de proxy CORS e ferramenta de teste de API que permite aos usuários enviar requisições HTTP e WebSocket, salvar requisições e gerenciar parâmetros, cabeçalhos e conteúdo do corpo.`, 
-      imgSrc: '/static/images/logo.png',
+      imgSrc: '/static/images/trevo_logo.png',
       href: 'https://app.trevo.rest',
     },
     {
       title: 'BomDeMorar - Avaliações de Bairros',
       description: `BomDeMorar é uma plataforma para moradores reais avaliarem bairros com base em segurança, custo-benefício, mobilidade e infraestrutura, ajudando usuários a encontrar seu lugar ideal para morar.`, 
-      imgSrc: '/static/images/logo.png',
+      imgSrc: '/static/images/bomdemorar_logo.webp',
       href: 'https://www.bomdemorar.com',
     },
     {
       title: 'Davez - Aplicativo de Mototáxi',
       description: `Davez é um aplicativo utilizado por mototáxis em comunidades brasileiras para organizar as corridas por ordem do mototaxi da vez (tendeu?)`, 
-      imgSrc: '/static/images/logo.png',
+      imgSrc: '/static/images/davez_logo.png',
       href: 'https://davez.vercel.app',
     },
     {
       title: 'Homebrew AutoMaintainer',
       description: `Um utilitário de linha de comando que automatiza tarefas comuns de manutenção do GitHub para repositórios e organizações, incluindo gerenciamento automatizado de pull requests e branches.`, 
-      imgSrc: '/static/images/logo.png',
+      imgSrc: '/static/images/automaintainer_logo.png',
       href: 'https://github.com/olucasandrade/homebrew-automaintainer',
     },
     {
       title: 'URL Analyzer (Pacote Go)',
       description: `Um pacote Go projetado para analisar métricas de desempenho de sites, fornecendo dados como tempo de carregamento da página, contagem de requisições HTTP e tamanho da página.`, 
-      imgSrc: '/static/images/logo.png',
+      imgSrc: '/static/images/url_analyzer_logo.png',
       href: 'https://github.com/olucasandrade/url-analyzer',
     },
   ],
