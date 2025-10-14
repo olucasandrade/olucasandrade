@@ -185,9 +185,13 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                 onClick={() => setShowAllTags((prev) => !prev)}
                 className="rounded-full border border-dashed px-3 py-1 text-sm text-primary-600 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-primary-400 dark:hover:bg-gray-700"
                 aria-expanded={showAllTags}
-                aria-label={showAllTags ? t('lesstags_aria') ?? 'Show fewer tags' : t('moretags_aria') ?? 'Show more tags'}
+                aria-label={
+                  showAllTags
+                    ? (t('lesstags_aria') ?? 'Show fewer tags')
+                    : (t('moretags_aria') ?? 'Show more tags')
+                }
               >
-                {showAllTags ? t('lesstags') ?? 'Show less' : t('moretags') ?? 'More tags'}
+                {showAllTags ? (t('lesstags') ?? 'Show less') : (t('moretags') ?? 'More tags')}
               </button>
             )}
           </div>
