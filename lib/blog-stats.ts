@@ -1,4 +1,3 @@
-import { createClient } from "redis";
 
 export interface BlogStats {
     likes: number
@@ -6,30 +5,76 @@ export interface BlogStats {
     likedBy: string[] // Store user IDs/IPs who liked
 }
 
-const URL = `rediss://default:${process.env.UPSTASH_REDIS_REST_TOKEN}@${process.env.UPSTASH_REDIS_REST_URL}:6379`
+const REST_URL = process.env.UPSTASH_REDIS_REST_URL
+const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN
 
-const connectRedis = async () => {
-  const redisClient = createClient({
-    url: URL,
-  });
-  await redisClient.connect();
-  return redisClient;
+if (!REST_URL || !REST_TOKEN) {
+  throw new TypeError(
+    'Upstash REST not configured. Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.'
+  )
+}
+
+async function upstashGet(key: string): Promise<string | null> {
+  const res = await fetch(`${REST_URL}/get/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${REST_TOKEN}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) return null
+  const body = (await res.json()) as { result?: string | null }
+  return (body as any)?.result ?? null
+}
+
+async function upstashSet(key: string, value: string): Promise<void> {
+  const res = await fetch(`${REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${REST_TOKEN}` },
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Upstash SET failed: ${res.status} ${text}`)
+  }
+}
+
+async function upstashScan(cursor: string, pattern = '*', count = 100): Promise<{ cursor: string; keys: string[] }> {
+  const url = `${REST_URL}/scan/${encodeURIComponent(cursor)}?match=${encodeURIComponent(pattern)}&count=${count}`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${REST_TOKEN}` }, cache: 'no-store' })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Upstash SCAN failed: ${res.status} ${text}`)
+  }
+  const body = (await res.json()) as { result: [string, string[]] }
+  const [nextCursor, keys] = body.result || ['0', []]
+  return { cursor: nextCursor, keys: keys || [] }
+}
+
+async function upstashMGet(keys: string[]): Promise<(string | null)[]> {
+  if (keys.length === 0) return []
+  const pathKeys = keys.map((k) => encodeURIComponent(k)).join('/')
+  const res = await fetch(`${REST_URL}/mget/${pathKeys}`, {
+    headers: { Authorization: `Bearer ${REST_TOKEN}` },
+    cache: 'no-store',
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Upstash MGET failed: ${res.status} ${text}`)
+  }
+  const body = (await res.json()) as { result?: (string | null)[] }
+  return (body as any)?.result ?? []
 }
 
 async function getAllKeysAndValues(pattern = '*') {
   const keys: string[] = [];
   let cursor = "0";
-  const redisClient = await connectRedis();
 
   do {
-    const reply = await redisClient.scan(cursor, { MATCH: pattern, COUNT: 100 });
-    cursor = reply.cursor;
-    keys.push(...reply.keys);
+    const reply = await upstashScan(cursor, pattern, 100)
+    cursor = reply.cursor
+    keys.push(...reply.keys)
   } while (cursor !== "0");
 
   if (keys.length === 0) return {};
 
-  const values = await redisClient.mGet(keys);
+  const values = await upstashMGet(keys)
 
   console.log(keys, values[0])
 
@@ -40,15 +85,13 @@ async function getAllKeysAndValues(pattern = '*') {
 }
 
 export async function getBlogStatsBySlug(slug: string): Promise<BlogStats> {
-  const redisClient = await connectRedis();
-  const data = await redisClient.get(`blog-stats:${slug}`) || '{}';
+  const data = (await upstashGet(`blog-stats:${slug}`)) || '{}'
   return JSON.parse(data) || { likes: 0, views: 0, likedBy: [] };
 }
 
 // Write stats to file
 export async function writeBlogStats(slug: string, stats: BlogStats): Promise<void> {
-  const redisClient = await connectRedis();
-  await redisClient.set(`blog-stats:${slug}`, JSON.stringify(stats));
+  await upstashSet(`blog-stats:${slug}`, JSON.stringify(stats))
 }
 
 // Get stats for a specific post
