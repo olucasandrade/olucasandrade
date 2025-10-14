@@ -28,5 +28,9 @@
   "postfound": "post found",
   "postsfound": "posts found",
   "withtags": "with tags:",
-  "clearfilters": "Clear filters"
+  "clearfilters": "Clear filters",
+  "moretags": "More tags",
+  "lesstags": "Show less",
+  "moretags_aria": "Show more tags",
+  "lesstags_aria": "Show fewer tags"
 }

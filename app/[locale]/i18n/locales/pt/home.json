@@ -31,5 +31,9 @@
   "postfound": "post encontrado",
   "postsfound": "posts encontrados", 
   "withtags": "com tags:",
-  "clearfilters": "Limpar filtros"
+  "clearfilters": "Limpar filtros",
+  "moretags": "Mais tags",
+  "lesstags": "Mostrar menos",
+  "moretags_aria": "Mostrar mais tags",
+  "lesstags_aria": "Mostrar menos tags"
 }

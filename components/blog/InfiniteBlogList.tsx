@@ -54,6 +54,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [displayedPosts, setDisplayedPosts] = useState(POSTS_PER_LOAD)
   const [isLoading, setIsLoading] = useState(false)
+  const [showAllTags, setShowAllTags] = useState(false)
 
   // Fetch blog stats for all posts
   const { stats: blogStats } = useBlogStats(locale)
@@ -66,6 +67,12 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
     })
     return Array.from(tagSet).sort()
   }, [posts])
+
+  const TAGS_COLLAPSE_THRESHOLD = 20
+  const tagsToRender = useMemo(
+    () => (showAllTags ? allTags : allTags.slice(0, TAGS_COLLAPSE_THRESHOLD)),
+    [allTags, showAllTags]
+  )
 
   // Filter posts based on search term and selected tags
   const filteredPosts = useMemo(() => {
@@ -160,7 +167,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
         {/* Tag Filter */}
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            {allTags.slice(0, 15).map((tag) => (
+            {tagsToRender.map((tag) => (
               <button
                 key={tag}
                 onClick={() => toggleTag(tag)}
@@ -173,6 +180,16 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                 {tag}
               </button>
             ))}
+            {allTags.length > TAGS_COLLAPSE_THRESHOLD && (
+              <button
+                onClick={() => setShowAllTags((prev) => !prev)}
+                className="rounded-full border border-dashed px-3 py-1 text-sm text-primary-600 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:text-primary-400 dark:hover:bg-gray-700"
+                aria-expanded={showAllTags}
+                aria-label={showAllTags ? t('lesstags_aria') ?? 'Show fewer tags' : t('moretags_aria') ?? 'Show more tags'}
+              >
+                {showAllTags ? t('lesstags') ?? 'Show less' : t('moretags') ?? 'More tags'}
+              </button>
+            )}
           </div>
 
           {(searchTerm || selectedTags.length > 0) && (
