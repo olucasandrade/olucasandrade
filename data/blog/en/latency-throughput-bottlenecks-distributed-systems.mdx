@@ -1,0 +1,164 @@
+---
+title: 'Latency, Throughput, and Bottlenecks: Understanding How Efficiency is Measured in Distributed Systems'
+date: '2025-10-20'
+language: en
+tags: ['system-design', 'performance', 'distributed-systems', 'monitoring', 'optimization']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Have you ever wondered why your application works perfectly with 100 users but starts to slow down with 10,000? Or why that API call that takes 50ms in development suddenly becomes 2 seconds in production? The answer lies in understanding latency, throughput, and bottlenecks in distributed systems.'
+images: ['/static/images/latency-throughput-bottlenecks.png']
+---
+
+What makes one system capable of handling millions of requests while another struggles with thousands? The answer doesn't lie in code complexity, but in the fundamental understanding of how systems process work. I talked about this in my last article. Now, diving deeper into concepts themselves, it's important to understand the conceptual before anything else.
+
+**Latency** and **throughput** are two of the pillars that determine system performance. They're not just metrics we measure, but theoretical foundations that govern how every distributed system behaves.
+
+Understanding these concepts is more powerful than any tool or technique, because it's about developing the mental models that allow you to predict, analyze, and design systems that perform well under any condition. It's the foundation of what you need to understand to absorb the reason behind all existing tooling.
+
+## The Theoretical Foundations
+
+These concepts aren't just operational metrics, but fundamental properties that emerge from the mathematical relationships between system components. Understanding them requires diving into the theoretical foundations.
+
+### Latency: The Fundamental Temporal Dimension
+
+_Nerd moment 🤓☝️_
+
+**Latency** represents the temporal dimension of a system's behavior. It's not just about "how long something takes", but the manifestation of the physical and logical constraints that involve the flow and processing of information.
+
+Latency is the time between sending a packet from the source and receiving that packet at the destination. An apparently simple definition, but one that hides some interdependent factors in each layer of the system.
+
+**Mathematical Foundation:**
+Latency (L) can be decomposed into 4 components:
+```
+L = Propagation | Transmission | Processing | Queuing
+```
+
+Where each component represents a different type of constraint:
+- **Propagation**: Determined by physical distance and the medium through which the signal propagates. Even at the speed of light, this delay can be significant. For example, the round-trip time between New York and Sydney approaches 200–300 ms, since light travels in fiber optic at about 200,000,000 m/s (due to the material's refractive index, around 1.5)
+- **Transmission**: The time needed to send all bits of a packet to the physical medium. It depends on both packet size and the link's data rate. For example, transmitting a 10 MB file over a 1 Mbps connection takes approximately 80 seconds just to put it "on the wire"
+- **Processing**: Time spent by routers, client and server to analyze headers, check for errors and determine routes. Although modern hardware significantly reduces this cost, it still adds a non-negligible delay at each network hop. Additionally, the hardware limitation (or lack thereof) affects the final latency, and internal processing even on powerful hardware can too. An API server receives a request to generate a report with aggregated data in an SQL database. Even if transport is fast, internal processing time can vary from 50 ms (warmed cache) to 1,000 ms (complex query without index).
+- **Queuing**: Time that packets spend waiting in buffers before being processed or sent. This delay is highly variable and often becomes dominant in congestion situations. A classic example is bufferbloat, a problem caused by excessively large buffers in routers, which drastically increases latency even in high-bandwidth networks. For example, during a traffic peak in an e-commerce site, a database server with a full connection queue keeps new requests waiting in buffer.
+
+Latency isn't governed only by the **critical path** through your system. Total latency is determined by the longest sequential chain of operations, not the sum of all operations. While bandwidth can be expanded almost indefinitely, latency is limited by the laws of physics. That's why... effective optimizations need architectural strategy.
+
+### Throughput: The Dimension of Flow and Capacity
+
+_Nerd moment (part 2) 🤓✌️_
+
+If **latency** represents the time it takes for something to happen, **throughput** represents **how much work can be done in that time**. It's the **spatial dimension of performance** and measures the volume of data or operations processed per unit of time.
+
+In simple terms: **latency is how long a delivery takes; throughput is how many deliveries fit per second**.
+These two concepts are inseparable: latency defines individual response time, while throughput defines the system's total production capacity.
+
+**Mathematical Foundation:**
+Throughput (T) can be defined in general terms as:
+
+```
+T = Completed operations / Total time
+```
+
+And is always limited by the smallest capacity in the path: the famous **bottleneck**.
+
+Some factors are directly linked to Throughput:
+
+#### **1. Physical Capacity**
+The physical capacity of the medium defines the upper limit of throughput.
+Even if the software is optimized, the communication channel (network, disk, CPU) has a maximum transfer rate.
+
+**Practical example:**
+A **100 Mbps** internet link can transfer at most **12.5 MB/s**.
+If a server tries to send 200 MB of data, throughput will be limited by physical bandwidth, no matter how fast the code processes.
+
+---
+
+#### **2. Protocol Overhead**
+Each protocol layer adds metadata, acknowledgments, and flow control mechanisms.
+These elements ensure reliability, but reduce effective throughput.
+
+**Practical example:**
+In a **TCP** connection, part of the bandwidth is consumed by ACKs, headers, and retransmissions. Even with a **1 Gbps** link, real throughput can drop to **700–800 Mbps**, depending on latency and TCP congestion window.
+
+---
+
+#### **3. Parallelism and Concurrency**
+Throughput increases when the system can process multiple operations in parallel. This depends on architecture, execution model, and parallelism efficiency. A Node.js server that processes requests asynchronously can maintain **thousands of simultaneous connections**, since non-blocking I/O allows processing to continue while a request waits for external response. Meanwhile, a synchronous server can freeze with just a few hundred open connections.
+
+---
+
+#### **4. Resource Contention**
+Contention happens when multiple operations compete for the same resources (CPU, disk, network, or memory locks). Even with powerful hardware, throughput drops if operations block each other. A queue system processing purchase orders can reduce its total throughput if multiple threads try to update the same inventory record simultaneously, in a scenario where the database imposes locks, and excessive concurrency becomes a bottleneck.
+
+---
+
+### Relationship between Throughput and Latency
+Although different, **throughput and latency are deeply interconnected**.
+Increasing throughput doesn't always reduce latency, but sometimes the opposite happens. As the request queue grows, throughput rises to a certain point, but latency also increases, since each request waits longer in the queue.
+
+For example, an API service can reach **peak throughput** at 1,000 requests/second. From there, average response time rises from **200 ms** to **2 seconds**. The system didn't get "slower" due to hardware, but just reached its flow limit.
+
+Maximizing throughput requires eliminating blocks and minimizing waits. Basically, caching, queues (asynchronous processing), load balancing, among others.
+
+### The Latency-Throughput Trade-off
+
+_Nerd moment (to finish) 🤓🤙_
+
+**Little's Law** provides the fundamental relationship between latency, throughput, and concurrency:
+```
+L = N / λ
+```
+Where:
+- L = Average latency
+- N = Average number of requests in the system
+- λ = Throughput (requests per second)
+
+This equation reveals an insight: **latency and throughput are inversely related for a given concurrency level**. As throughput increases, latency increases proportionally.
+
+### The Network Effect
+
+In distributed systems, **network latency** becomes a fundamental constraint. The speed of light (c ≈ 3×10⁸ m/s) establishes a theoretical minimum for latency:
+```
+Minimum_Latency = Distance / Speed_of_Light
+```
+
+For a round-trip between New York and London (~5,500 km):
+```
+Minimum_Latency = 11,000,000 m / 3×10⁸ m/s ≈ 37ms
+```
+
+This is the **theoretical minimum**, meaning theoretically, it's impossible for a system with any connection between these places to have latency lower than this. Real systems will always be slower due to processing, queuing, and protocol overhead.
+
+### Identifying and Resolving Bottlenecks
+
+Identifying bottlenecks is an investigative process that starts with monitoring. Before optimizing any part of the system, it's very important to have visibility into application and infrastructure behavior. Metrics like latency and throughput (explained in theory above), error rates, and resource utilization are the main indicators to discover where performance is being limited. APM tools like Datadog or AWS X-Ray allow tracking requests between services, while Prometheus, Grafana, and CloudWatch provide a detailed view of the system itself and the database.
+
+These bottlenecks often reveal some predictable patterns, whether in time (slowness during peak hours), load (slowness with many users), or resources (high CPU or memory). Among the most common sources are databases, where inefficient queries, missing indexes, or connection pool exhaustion make the database the slowest point in the architecture. Identifying these bottlenecks involves monitoring query execution times and server resources. Always seek to optimize queries, apply indexes where necessary, and if needed, create read replicas.
+
+Another recurring bottleneck is networks. Physical distance between services, congestion, and inefficient serialization can increase latency. Payload analysis, RTT monitoring, and distributed tracing help diagnose the problem. Strategies like CDNs usually reduce the impact.
+
+Bottlenecks can also come from external services, like third-party APIs. Network problems, rate limiting, and outages can cause systemic slowness. When this is a problem, it's important to monitor response time and implement circuit breakers, retries, and cache for external data, ensuring graceful degradation in case of failures. There are some strategies for correctly measuring performance (this will be discussed in future topics), and establishing baselines allows differentiating normal behaviors from anomalies.
+
+Resolving bottlenecks also requires strategy and prioritization. Applying the 80/20 rule (focusing on the 20% of problems that cause 80% of impact) is more efficient than trying to optimize everything. Techniques like horizontal scalability (more instances) and vertical (more powerful instances), cache, load balancing, and stress tests help keep the system stable under growing load. Designing for performance from the start and adopting continuous monitoring ensure that bottlenecks are identified and resolved before impacting the user.
+
+**VERY IMPORTANT NOTE:** As important as knowing when to apply scaling strategies, understand when NOT to apply them. I've seen systems where caching and sharding did more harm than good to system requirements, and designing for millions a system that will serve hundreds without high-scale prediction is killing a fly with a bazooka.
+
+## The Challenge and the Reward
+
+I can't say that identifying and resolving bottlenecks is easy. It requires deep understanding of your system, patience for investigation, extra attention, and sometimes significant architectural changes.
+
+But the reward is immense. By mastering these concepts, you not only improve your system's performance, but also develop the skills to build systems that can handle real-world scale and complexity.
+
+It's the difference between building something that works in development and something that works in production, at scale. Between building something that works for you and something that works for a number of users equivalent to an entire city.
+
+## Conclusion
+
+Understanding latency, throughput, and bottlenecks isn't just about fixing performance problems. It's about developing the mindset to build systems that can handle real-world demands.
+
+The key is to start thinking about performance from the beginning, not as an afterthought. Monitor early, test frequently, and always be prepared to investigate when things don't work as expected.
+
+Remember: every system has bottlenecks. The question isn't whether you'll have them, but whether you'll be prepared to identify and resolve them when they appear.
+
+You should practice: Set up monitoring on a personal project, run load tests to identify bottlenecks, experiment with cache strategies (and identify when it's REALLY needed), analyze performance (not just your projects, but some other open source)
+
+Have you found any interesting bottlenecks in your systems? What strategies worked best for you? Comment below!
+
+Until next time! 👋
