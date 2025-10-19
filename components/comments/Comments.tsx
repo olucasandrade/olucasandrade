@@ -11,7 +11,8 @@ type CommentsProps = {
 
 export default function Comments({ post, locale }: CommentsProps) {
   return (
-    <Giscus
+    <div className="flex justify-center bg-gray-900 dark:bg-none p-6 rounded-lg">
+      <Giscus
       id="comments"
       repo="olucasandrade/olucasandrade"
       repoId="1048676460"
@@ -25,5 +26,6 @@ export default function Comments({ post, locale }: CommentsProps) {
       lang={locale}
       loading="lazy"
     />
+    </div>
   )
 }
