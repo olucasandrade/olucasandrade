@@ -8,11 +8,11 @@ Lucas Andrade is a seasoned Software Engineer with over 5 years of experience, s
 
 Lucas possesses a comprehensive skill set that spans both frontend and backend development, complemented by a solid understanding of cloud infrastructure and modern development practices. His expertise includes:
 
-*   **Frontend Development:** Proficient in JavaScript and TypeScript, with hands-on experience using popular libraries and frameworks such as React and Vue.js. He also has experience in Mobile App Development with React Native.
-*   **Backend Development:** Extensive experience with Node.js (Express) and Python (Flask, Pyramid). Lucas also has solid knowledge and practical experience with Golang for building robust APIs.
-*   **Database Management:** Strong command of both SQL and NoSQL databases, including MySQL, PostgreSQL, and MongoDB.
-*   **Cloud & DevOps:** Knowledgeable in AWS services and experienced with containerization using Docker. He is also well-versed in Git and GitHub for version control and has a solid understanding of the Linux environment and Bash scripting.
-*   **Methodologies:** Familiar with Agile methodologies, particularly Scrum, ensuring efficient project delivery and collaboration.
+- **Frontend Development:** Proficient in JavaScript and TypeScript, with hands-on experience using popular libraries and frameworks such as React and Vue.js. He also has experience in Mobile App Development with React Native.
+- **Backend Development:** Extensive experience with Node.js (Express) and Python (Flask, Pyramid). Lucas also has solid knowledge and practical experience with Golang for building robust APIs.
+- **Database Management:** Strong command of both SQL and NoSQL databases, including MySQL, PostgreSQL, and MongoDB.
+- **Cloud & DevOps:** Knowledgeable in AWS services and experienced with containerization using Docker. He is also well-versed in Git and GitHub for version control and has a solid understanding of the Linux environment and Bash scripting.
+- **Methodologies:** Familiar with Agile methodologies, particularly Scrum, ensuring efficient project delivery and collaboration.
 
 ## Career Highlights
 
@@ -24,9 +24,6 @@ Lucas is passionate about creating innovative and efficient solutions. He consis
 
 ## Connect with Lucas
 
-*   **LinkedIn:** [www.linkedin.com/in/lucasandradesouza](www.linkedin.com/in/lucasandradesouza)
-*   **GitHub:** [github.com/olucasandrade](https://github.com/olucasandrade)
-*   **Medium:** [olucasandrade.medium.com](https://olucasandrade.medium.com/)
-
-
-
+- **LinkedIn:** [www.linkedin.com/in/lucasandradesouza](www.linkedin.com/in/lucasandradesouza)
+- **GitHub:** [github.com/olucasandrade](https://github.com/olucasandrade)
+- **Medium:** [olucasandrade.medium.com](https://olucasandrade.medium.com/)

@@ -56,7 +56,7 @@ Com tudo isso pronto, podemos começar a pôr a mão na massa!
 
 ## 4º PASSO: COLETANDO OS DADOS DA API
 
-Na pasta usada para o nosso projeto, vamos criar dois arquivos. Um para pegar os dados do clima, que eu chamei de *weather.py*, e um para ler e enviar mensagens no telegram, que eu chamei de *telebot.py*.
+Na pasta usada para o nosso projeto, vamos criar dois arquivos. Um para pegar os dados do clima, que eu chamei de _weather.py_, e um para ler e enviar mensagens no telegram, que eu chamei de _telebot.py_.
 
 No arquivo weather.py, vamos começar importando algumas das bibliotecas que instalamos no primeiro passo.
 
@@ -110,7 +110,7 @@ import telegram.message
 from weather import getWeather
 ```
 
-Agora, precisamos criar uma função principal, que vai receber tudo o que for enviado para o bot. Guardei o token do telegram numa váriavel chamada *MY_TOKEN_ID*, e com isso criei uma função chamada main, que vai ter alguns comandos necessários
+Agora, precisamos criar uma função principal, que vai receber tudo o que for enviado para o bot. Guardei o token do telegram numa váriavel chamada _MY_TOKEN_ID_, e com isso criei uma função chamada main, que vai ter alguns comandos necessários
 
 ```python
 def main():
@@ -125,9 +125,9 @@ A função vai criar uma instância com seu token de acesso, depois usar o updat
 
 ## 6º PASSO: FAZENDO O BOT RESPONDER AS NOSSAS MENSAGENS
 
-Bom, a função de resposta deve receber dois parâmetros. O primeiro é o *bot*, que representa o próprio bot em si e todos comandos de envio, e o segundo é o *update*, que representa todas as atualizações, ou seja, as mensagens enviadas, quem enviou, o horário, entre outros.
+Bom, a função de resposta deve receber dois parâmetros. O primeiro é o _bot_, que representa o próprio bot em si e todos comandos de envio, e o segundo é o _update_, que representa todas as atualizações, ou seja, as mensagens enviadas, quem enviou, o horário, entre outros.
 
-Logo, devemos criar uma função chamada weather (como especificamos no *CommandHandler* acima) e colocarmos os parâmetros *bot* e *update*, além de alguns comandos. A declaração da função ficaria dessa maneira:
+Logo, devemos criar uma função chamada weather (como especificamos no _CommandHandler_ acima) e colocarmos os parâmetros _bot_ e _update_, além de alguns comandos. A declaração da função ficaria dessa maneira:
 
 ```python
 def weather(bot, update):
@@ -135,9 +135,9 @@ def weather(bot, update):
     bot.send_message(chat_id=chat_id, text="algum texto")
 ```
 
-A variável *chat_id* é estritamente necessária, pois ela que vai especificar para o sistema para quem o bot deve enviar a mensagem. Como queremos que ele simplesmente responda a mensagem que recebeu, nós apenas dizemos que é o *update.message.chat_id*, ou seja, o id da mensagem recebida e posteriormente passada como parâmetro.
+A variável _chat_id_ é estritamente necessária, pois ela que vai especificar para o sistema para quem o bot deve enviar a mensagem. Como queremos que ele simplesmente responda a mensagem que recebeu, nós apenas dizemos que é o _update.message.chat_id_, ou seja, o id da mensagem recebida e posteriormente passada como parâmetro.
 
-Após isso, temos a função *bot.send_message()*. Como o nome já diz, essa função vai ser responsável por enviar a mensagem para o chat_id da variável. Essa função recebe dois parâmetros também. O primeiro é o próprio *chat_id*, e o segundo é o parâmetro *text*, que é o texto que queremos enviar como resposta.
+Após isso, temos a função _bot.send_message()_. Como o nome já diz, essa função vai ser responsável por enviar a mensagem para o chat_id da variável. Essa função recebe dois parâmetros também. O primeiro é o próprio _chat_id_, e o segundo é o parâmetro _text_, que é o texto que queremos enviar como resposta.
 
 ```python
 def weather(bot, update):
@@ -152,7 +152,7 @@ Pronto, o bot está praticamente finalizado. Então vamos para o último passo!
 
 ## 7º PASSO: CRIANDO A ÚLTIMA CONDIÇÃO NECESSÁRIA E RODANDO O BOT
 
-Para terminar, precisamos usar a condição **if __name__ == "__main__"**, que é muito usada em Python basicamente para garantir que o comando vai ser utilizado quando rodamos o arquivo diretamente.
+Para terminar, precisamos usar a condição **if **name** == "**main**"**, que é muito usada em Python basicamente para garantir que o comando vai ser utilizado quando rodamos o arquivo diretamente.
 
 ```python
 if __name__ == "__main__":
@@ -168,5 +168,3 @@ Pronto! O seu código já deve estar funcionando normalmente e o seu bot será c
 **Você pode estar acessando o código inteiro no meu repositório do Github**, que vai estar totalmente aberto a issues e pull requests. Vou estar sempre dando uma olhada e sempre aberto a novas ideias.
 
 No mais, espero que tenha gostado. Deixe seu feedback, crítica ou adendo que queira fazer. Discussões sobre o tema são super bem-vindas!
-
-

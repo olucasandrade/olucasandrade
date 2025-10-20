@@ -29,11 +29,13 @@ Latency is the time between sending a packet from the source and receiving that 
 
 **Mathematical Foundation:**
 Latency (L) can be decomposed into 4 components:
+
 ```
 L = Propagation | Transmission | Processing | Queuing
 ```
 
 Where each component represents a different type of constraint:
+
 - **Propagation**: Determined by physical distance and the medium through which the signal propagates. Even at the speed of light, this delay can be significant. For example, the round-trip time between New York and Sydney approaches 200–300 ms, since light travels in fiber optic at about 200,000,000 m/s (due to the material's refractive index, around 1.5)
 - **Transmission**: The time needed to send all bits of a packet to the physical medium. It depends on both packet size and the link's data rate. For example, transmitting a 10 MB file over a 1 Mbps connection takes approximately 80 seconds just to put it "on the wire"
 - **Processing**: Time spent by routers, client and server to analyze headers, check for errors and determine routes. Although modern hardware significantly reduces this cost, it still adds a non-negligible delay at each network hop. Additionally, the hardware limitation (or lack thereof) affects the final latency, and internal processing even on powerful hardware can too. An API server receives a request to generate a report with aggregated data in an SQL database. Even if transport is fast, internal processing time can vary from 50 ms (warmed cache) to 1,000 ms (complex query without index).
@@ -62,6 +64,7 @@ And is always limited by the smallest capacity in the path: the famous **bottlen
 Some factors are directly linked to Throughput:
 
 #### **1. Physical Capacity**
+
 The physical capacity of the medium defines the upper limit of throughput.
 Even if the software is optimized, the communication channel (network, disk, CPU) has a maximum transfer rate.
 
@@ -72,6 +75,7 @@ If a server tries to send 200 MB of data, throughput will be limited by physical
 ---
 
 #### **2. Protocol Overhead**
+
 Each protocol layer adds metadata, acknowledgments, and flow control mechanisms.
 These elements ensure reliability, but reduce effective throughput.
 
@@ -81,16 +85,19 @@ In a **TCP** connection, part of the bandwidth is consumed by ACKs, headers, and
 ---
 
 #### **3. Parallelism and Concurrency**
+
 Throughput increases when the system can process multiple operations in parallel. This depends on architecture, execution model, and parallelism efficiency. A Node.js server that processes requests asynchronously can maintain **thousands of simultaneous connections**, since non-blocking I/O allows processing to continue while a request waits for external response. Meanwhile, a synchronous server can freeze with just a few hundred open connections.
 
 ---
 
 #### **4. Resource Contention**
+
 Contention happens when multiple operations compete for the same resources (CPU, disk, network, or memory locks). Even with powerful hardware, throughput drops if operations block each other. A queue system processing purchase orders can reduce its total throughput if multiple threads try to update the same inventory record simultaneously, in a scenario where the database imposes locks, and excessive concurrency becomes a bottleneck.
 
 ---
 
 ### Relationship between Throughput and Latency
+
 Although different, **throughput and latency are deeply interconnected**.
 Increasing throughput doesn't always reduce latency, but sometimes the opposite happens. As the request queue grows, throughput rises to a certain point, but latency also increases, since each request waits longer in the queue.
 
@@ -103,10 +110,13 @@ Maximizing throughput requires eliminating blocks and minimizing waits. Basicall
 _Nerd moment (to finish) 🤓🤙_
 
 **Little's Law** provides the fundamental relationship between latency, throughput, and concurrency:
+
 ```
 L = N / λ
 ```
+
 Where:
+
 - L = Average latency
 - N = Average number of requests in the system
 - λ = Throughput (requests per second)
@@ -116,11 +126,13 @@ This equation reveals an insight: **latency and throughput are inversely related
 ### The Network Effect
 
 In distributed systems, **network latency** becomes a fundamental constraint. The speed of light (c ≈ 3×10⁸ m/s) establishes a theoretical minimum for latency:
+
 ```
 Minimum_Latency = Distance / Speed_of_Light
 ```
 
 For a round-trip between New York and London (~5,500 km):
+
 ```
 Minimum_Latency = 11,000,000 m / 3×10⁸ m/s ≈ 37ms
 ```

@@ -11,21 +11,21 @@ type CommentsProps = {
 
 export default function Comments({ post, locale }: CommentsProps) {
   return (
-    <div className="flex justify-center bg-gray-900 dark:bg-none p-6 rounded-lg">
+    <div className="flex justify-center rounded-lg bg-gray-900 p-6 dark:bg-none">
       <Giscus
-      id="comments"
-      repo="olucasandrade/olucasandrade"
-      repoId="1048676460"
-      category="Posts"
-      mapping="specific"
-      term={post.title}
-      reactionsEnabled="1"
-      emitMetadata="0"
-      inputPosition="top"
-      theme={siteMetadata.theme}
-      lang={locale}
-      loading="lazy"
-    />
+        id="comments"
+        repo="olucasandrade/olucasandrade"
+        repoId="1048676460"
+        category="Posts"
+        mapping="specific"
+        term={post.title}
+        reactionsEnabled="1"
+        emitMetadata="0"
+        inputPosition="top"
+        theme={siteMetadata.theme}
+        lang={locale}
+        loading="lazy"
+      />
     </div>
   )
 }

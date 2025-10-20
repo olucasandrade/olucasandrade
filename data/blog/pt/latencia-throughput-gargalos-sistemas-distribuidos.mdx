@@ -29,11 +29,13 @@ Latência é o tempo entre o envio de um pacote pela origem e o recebimento dess
 
 **Fundação Matemática:**
 A latência (L) pode ser decomposta em 4 componentes:
+
 ```
 L = Propagação | Transmissão | Processamento | Enfileiramento
 ```
 
 Onde cada componente representa um tipo diferente de restrição:
+
 - **Propagação**: Determinada pela distância física e pelo meio em que o sinal se propaga. Mesmo na velocidade da luz, esse atraso pode ser significativo. Por exemplo, o tempo de ida e volta entre Nova York e Sydney aproxima-se de 200–300 ms, já que a luz viaja na fibra óptica a cerca de 200.000.000 m/s (devido ao índice de refração do material, em torno de 1,5)
 - **Transmissão**: O tempo necessário pra enviar todos os bits de um pacote ao meio físico. Depende tanto do tamanho do pacote quanto da taxa de dados do link. Por exemplo, transmitir um arquivo de 10 MB em uma conexão de 1 Mbps leva aproximadamente 80 segundos apenas pra colocá-lo “no fio”
 - **Processamento**: Tempo gasto por roteadores, cliente e servidor pra analisar cabeçalhos, verificar erros e determinar rotas. Embora o hardware moderno reduza bastante esse custo, ele ainda adiciona um atraso não desprezível em cada salto da rede. Além disso, a própria limitação (ou não) do hardware afeta a latência final, e o processamento interno ainda num hardware poderoso também pode. Um servidor de API recebe uma requisição pra gerar um relatório com dados agregados em um banco SQL. Mesmo que o transporte seja rápido, o tempo de processamento interno pode variar de 50 ms (cache aquecido) até 1.000 ms (consulta complexa sem índice).
@@ -41,17 +43,17 @@ Onde cada componente representa um tipo diferente de restrição:
 
 A latência não é governada só pelo **caminho crítico** através do seu sistema. A latência total é determinada pela cadeia sequencial mais longa de operações, não pela soma de todas as operações. Enquanto a largura de banda pode ser expandida quase indefinidamente, a latência é limitada pelas leis da física. Por isso... otimizações eficazes precisam de estratégia arquitetural.
 
-### Throughput: A Dimensão da Vazão e Capacidade  
+### Throughput: A Dimensão da Vazão e Capacidade
 
-_Momento nerd (parte 2) 🤓✌️_  
+_Momento nerd (parte 2) 🤓✌️_
 
-Se a **latência** representa o tempo que algo leva pra acontecer, o **throughput** representa **quanto trabalho pode ser feito nesse tempo**. Ele é a **dimensão espacial da performance** e mede o volume de dados ou operações processadas por unidade de tempo.  
+Se a **latência** representa o tempo que algo leva pra acontecer, o **throughput** representa **quanto trabalho pode ser feito nesse tempo**. Ele é a **dimensão espacial da performance** e mede o volume de dados ou operações processadas por unidade de tempo.
 
 Em termos simples: **latência é quanto demora uma entrega; throughput é quantas entregas cabem por segundo**.  
-Esses dois conceitos são inseparáveis: a latência define o tempo de resposta individual, enquanto o throughput define a capacidade total de produção do sistema. 
+Esses dois conceitos são inseparáveis: a latência define o tempo de resposta individual, enquanto o throughput define a capacidade total de produção do sistema.
 
 **Fundação Matemática:**  
-O throughput (T) pode ser definido de forma geral como:  
+O throughput (T) pode ser definido de forma geral como:
 
 ```
 T = Operações concluídas / Tempo total
@@ -62,39 +64,44 @@ E está sempre limitado pela menor capacidade no caminho: o famoso **gargalo**.
 Alguns fatores estão diretamente ligados ao Throughtput:
 
 #### **1. Capacidade Física**
+
 A capacidade física do meio define o limite superior do throughput.  
-Mesmo que o software seja otimizado, o canal de comunicação (rede, disco, CPU) tem uma taxa máxima de transferência.  
+Mesmo que o software seja otimizado, o canal de comunicação (rede, disco, CPU) tem uma taxa máxima de transferência.
 
 **Exemplo prático:**  
 Um link de internet de **100 Mbps** pode transferir no máximo **12,5 MB/s**.  
-Se um servidor tenta enviar 200 MB de dados, o throughput será limitado pela largura de banda física, não importa o quão rápido o código processe.  
+Se um servidor tenta enviar 200 MB de dados, o throughput será limitado pela largura de banda física, não importa o quão rápido o código processe.
 
 ---
 
 #### **2. Overhead Protocolar**
+
 Cada camada de protocolo adiciona metadados, confirmações e mecanismos de controle de fluxo.  
-Esses elementos garantem confiabilidade, mas reduzem o throughput efetivo.  
+Esses elementos garantem confiabilidade, mas reduzem o throughput efetivo.
 
 **Exemplo prático:**  
-Em uma conexão **TCP**, parte da banda é consumida por ACKs, headers e retransmissões. Mesmo com um link de **1 Gbps**, o throughput real pode cair pra **700–800 Mbps**, dependendo da latência e da janela de congestionamento do TCP.  
+Em uma conexão **TCP**, parte da banda é consumida por ACKs, headers e retransmissões. Mesmo com um link de **1 Gbps**, o throughput real pode cair pra **700–800 Mbps**, dependendo da latência e da janela de congestionamento do TCP.
 
 ---
 
 #### **3. Paralelismo e Concorrência**
-Throughput aumenta quando o sistema consegue processar múltiplas operações em paralelo. Isso depende de arquitetura, modelo de execução e eficiência de paralelismo. Um servidor Node.js que processa requisições de forma assíncrona pode manter **milhares de conexões simultâneas**, pois o I/O não bloqueante permite que o processamento continue enquanto uma requisição aguarda resposta externa. Já um servidor síncrono pode travar com apenas algumas centenas de conexões abertas.  
+
+Throughput aumenta quando o sistema consegue processar múltiplas operações em paralelo. Isso depende de arquitetura, modelo de execução e eficiência de paralelismo. Um servidor Node.js que processa requisições de forma assíncrona pode manter **milhares de conexões simultâneas**, pois o I/O não bloqueante permite que o processamento continue enquanto uma requisição aguarda resposta externa. Já um servidor síncrono pode travar com apenas algumas centenas de conexões abertas.
 
 ---
 
 #### **4. Contenção de Recursos**
-A contenção acontece quando múltiplas operações competem pelos mesmos recursos (CPU, disco, rede ou lock de memória). Mesmo com hardware potente, o throughput cai se as operações se bloqueiam mutuamente. Um sistema de filas processando pedidos de compra pode reduzir seu throughput total se várias threads tentam atualizar o mesmo registro de estoque simultaneamente, num cenário onde o banco de dados impõe locks, e a concorrência excessiva vira gargalo.  
+
+A contenção acontece quando múltiplas operações competem pelos mesmos recursos (CPU, disco, rede ou lock de memória). Mesmo com hardware potente, o throughput cai se as operações se bloqueiam mutuamente. Um sistema de filas processando pedidos de compra pode reduzir seu throughput total se várias threads tentam atualizar o mesmo registro de estoque simultaneamente, num cenário onde o banco de dados impõe locks, e a concorrência excessiva vira gargalo.
 
 ---
 
-### Relação entre Throughput e Latência**
-Embora diferentes, **throughput e latência estão profundamente interligados**.  
-Aumentar throughput nem sempre reduz latência, mas às vezes, o contrário acontece. À medida que a fila de requisições cresce, o throughput sobe até certo ponto, mas a latência também aumenta, pois cada requisição espera mais tempo na fila.  
+### Relação entre Throughput e Latência\*\*
 
-Por exemplo, um serviço de API pode atingir **pico de throughput** a 1.000 requisições/segundo. A partir daí, o tempo médio de resposta sobe de **200 ms** pra **2 segundos**. O sistema não ficou “mais lento” por hardware, mas apenas atingiu seu limite de vazão.  
+Embora diferentes, **throughput e latência estão profundamente interligados**.  
+Aumentar throughput nem sempre reduz latência, mas às vezes, o contrário acontece. À medida que a fila de requisições cresce, o throughput sobe até certo ponto, mas a latência também aumenta, pois cada requisição espera mais tempo na fila.
+
+Por exemplo, um serviço de API pode atingir **pico de throughput** a 1.000 requisições/segundo. A partir daí, o tempo médio de resposta sobe de **200 ms** pra **2 segundos**. O sistema não ficou “mais lento” por hardware, mas apenas atingiu seu limite de vazão.
 
 Maximizar throughput exige eliminar bloqueios e minimizar esperas. Basicamente, caching, filas (processamento assíncrono), load balancing, entre outros.
 
@@ -103,10 +110,13 @@ Maximizar throughput exige eliminar bloqueios e minimizar esperas. Basicamente, 
 _Momento nerd (pra acabar) 🤓🤙_
 
 **A Lei de Little** fornece a relação fundamental entre latência, throughput e concorrência:
+
 ```
 L = N / λ
 ```
+
 Onde:
+
 - L = Latência média
 - N = Número médio de requisições no sistema
 - λ = Throughput (requisições por segundo)
@@ -116,11 +126,13 @@ Essa equação revela uma percepção: **latência e throughput são inversament
 ### O Efeito de Rede
 
 Em sistemas distribuídos, a **latência de rede** se torna uma restrição fundamental. A velocidade da luz (c ≈ 3×10⁸ m/s) estabelece um mínimo teórico pra latência:
+
 ```
 Latência_Mínima = Distância / Velocidade_da_Luz
 ```
 
 pra uma viagem de ida e volta entre Nova York e Londres (~5.500 km):
+
 ```
 Latência_Mínima = 11.000.000 m / 3×10⁸ m/s ≈ 37ms
 ```

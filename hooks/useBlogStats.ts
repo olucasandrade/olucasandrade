@@ -18,13 +18,13 @@ export function useBlogStats(locale: string) {
       try {
         setIsLoading(true)
         setError(null)
-        
+
         const response = await fetch(`/api/blog/stats`)
-        
+
         if (!response.ok) {
           throw new Error('Failed to fetch blog stats')
         }
-        
+
         const data = await response.json()
         setStats(data)
       } catch (err) {

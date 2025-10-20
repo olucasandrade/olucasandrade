@@ -23,11 +23,11 @@ It's important to understand var even for maintaining old code. But in new code,
 
 ```javascript
 // ❌ Avoid
-var name = "Lucas";
+var name = 'Lucas'
 
 // ✅ Prefer
-let name = "Lucas";
-const API_URL = "https://api.example.com";
+let name = 'Lucas'
+const API_URL = 'https://api.example.com'
 ```
 
 ## Use constants whenever possible
@@ -36,13 +36,13 @@ const API_URL = "https://api.example.com";
 
 ```javascript
 // ❌ Avoid
-let name = "Lucas";
-let age = 25;
+let name = 'Lucas'
+let age = 25
 
 // ✅ Prefer
-const name = "Lucas";
-const age = 25;
-let counter = 0; // only if it will be modified later
+const name = 'Lucas'
+const age = 25
+let counter = 0 // only if it will be modified later
 ```
 
 ## ALWAYS use "==="
@@ -51,12 +51,12 @@ In other languages, it's common to use the comparator with two equal signs witho
 
 ```javascript
 // ❌ Avoid
-if (5 == "5") {
+if (5 == '5') {
   // true - but different types!
 }
 
 // ✅ Prefer
-if (5 === "5") {
+if (5 === '5') {
   // false - strict comparison
 }
 ```
@@ -67,13 +67,13 @@ Many people often initialize an empty variable, which JavaScript interprets as u
 
 ```javascript
 // ❌ Avoid
-let users;
-let isActive;
+let users
+let isActive
 
 // ✅ Prefer
-let users = [];
-let isActive = false;
-const defaultConfig = {};
+let users = []
+let isActive = false
+const defaultConfig = {}
 ```
 
 ## Take semicolons seriously!
@@ -86,16 +86,16 @@ Just... avoid it.
 
 ```javascript
 // ❌ Avoid
-const name = "Lucas"
+const name = 'Lucas'
 const getData = () => {
-  return "data"
+  return 'data'
 }
 
 // ✅ Prefer
-const name = "Lucas";
+const name = 'Lucas'
 const getData = () => {
-  return "data";
-};
+  return 'data'
+}
 ```
 
 ## Use ternary operator whenever possible
@@ -104,15 +104,15 @@ When possible, don't use if for simple condition checks. For better readability 
 
 ```javascript
 // ❌ Avoid (for simple cases)
-let message;
+let message
 if (user.isActive) {
-  message = "Active user";
+  message = 'Active user'
 } else {
-  message = "Inactive user";
+  message = 'Inactive user'
 }
 
 // ✅ Prefer
-const message = user.isActive ? "Active user" : "Inactive user";
+const message = user.isActive ? 'Active user' : 'Inactive user'
 ```
 
 ## Prefer For Loop instead of forEach sometimes
@@ -126,9 +126,9 @@ for (let i = 0; i < array.length; i++) {
 }
 
 // For readability, forEach is acceptable:
-array.forEach(item => {
+array.forEach((item) => {
   // processing
-});
+})
 ```
 
 ## Avoid "new" VERY much
@@ -137,14 +137,14 @@ With the exception of very specific cases, the recommendation is not to use new 
 
 ```javascript
 // ❌ Avoid
-const obj = new Object();
-const arr = new Array();
-const str = new String("hello");
+const obj = new Object()
+const arr = new Array()
+const str = new String('hello')
 
 // ✅ Prefer
-const obj = {};
-const arr = [];
-const str = "hello";
+const obj = {}
+const arr = []
+const str = 'hello'
 ```
 
 ## Get used to using functions with expressions
@@ -154,18 +154,18 @@ Another recent JavaScript habit that came with the new update, using functions w
 ```javascript
 // ❌ Avoid (function hoisting can cause confusion)
 function getData() {
-  return "data";
+  return 'data'
 }
 
 // ✅ Prefer
 const getData = () => {
-  return "data";
-};
+  return 'data'
+}
 
 // Or
-const getData = function() {
-  return "data";
-};
+const getData = function () {
+  return 'data'
+}
 ```
 
 ## Functions should only have ONE role
@@ -176,30 +176,30 @@ Especially at the beginning, it's very common to fall into the trap of making co
 // ❌ Avoid - function with multiple responsibilities
 const processUser = (user) => {
   // validation
-  if (!user.email) throw new Error("Email required");
-  
+  if (!user.email) throw new Error('Email required')
+
   // formatting
-  user.name = user.name.toUpperCase();
-  
+  user.name = user.name.toUpperCase()
+
   // saving
-  database.save(user);
-  
+  database.save(user)
+
   // email sending
-  emailService.send(user.email);
-};
+  emailService.send(user.email)
+}
 
 // ✅ Prefer - functions with single responsibility
 const validateUser = (user) => {
-  if (!user.email) throw new Error("Email required");
-};
+  if (!user.email) throw new Error('Email required')
+}
 
 const formatUser = (user) => {
-  return { ...user, name: user.name.toUpperCase() };
-};
+  return { ...user, name: user.name.toUpperCase() }
+}
 
 const saveUser = (user) => {
-  return database.save(user);
-};
+  return database.save(user)
+}
 ```
 
 ## Default parameters in functions
@@ -211,17 +211,17 @@ This way, whenever the function is called it won't break, regardless of how it's
 ```javascript
 // ❌ Avoid
 const greet = (name) => {
-  return `Hello, ${name}`;
-};
+  return `Hello, ${name}`
+}
 
 // ✅ Prefer
-const greet = (name = "Guest") => {
-  return `Hello, ${name}`;
-};
+const greet = (name = 'Guest') => {
+  return `Hello, ${name}`
+}
 
 // Usage
-greet(); // "Hello, Guest"
-greet("Lucas"); // "Hello, Lucas"
+greet() // "Hello, Guest"
+greet('Lucas') // "Hello, Lucas"
 ```
 
 ## Unit tests always!
@@ -237,15 +237,13 @@ For those who don't know where to start with unit tests in JavaScript or even wa
 
 ```javascript
 // Simple test example with Jest
-const sum = (a, b) => a + b;
+const sum = (a, b) => a + b
 
 test('adds two numbers', () => {
-  expect(sum(2, 3)).toBe(5);
-});
+  expect(sum(2, 3)).toBe(5)
+})
 ```
 
 ---
 
 So, did you like the tips? Were they useful to you? Something you didn't know the importance of? Any best practice suggestion? Leave your comment! Let's share knowledge!
-
-

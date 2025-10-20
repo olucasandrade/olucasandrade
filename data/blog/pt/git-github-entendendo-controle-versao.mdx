@@ -30,19 +30,19 @@ Após fazer o download do git [aqui](https://git-scm.com/downloads), veja alguns
 - **git push**: Comando usado para enviar sua alteração para o repositório remoto, podendo ser vista por todos os membros da equipe que está trabalhando com você.
 - **git pull**: Esse comando faz exatamente o contrário do push, puxando tudo o que está no repositório remoto para o seu repositório local. Uma espécie de sincronização é feita ao dar esse comando.
 
-*Obs: Tanto o git pull quanto o git push são acompanhados do comando origin + o nome da sua branch, que é um assunto um pouco mais complexo e tema principal de outro artigo. A princípio, use os comandos acompanhados de "origin master".*
+_Obs: Tanto o git pull quanto o git push são acompanhados do comando origin + o nome da sua branch, que é um assunto um pouco mais complexo e tema principal de outro artigo. A princípio, use os comandos acompanhados de "origin master"._
 
 ## Exemplo Prático
 
-Vamos supôr que eu tenha um arquivo chamado frutas.txt. Nesse arquivo, temos o texto "Maçã, banana, maracujá, manga". Usando **git init** nesse arquivo ele começa a ser versionado pelo sistema. Logo após eu adiciono a fruta "laranja" ao arquivo deixando o arquivo com uma alteração não vista por ninguém por enquanto. 
+Vamos supôr que eu tenha um arquivo chamado frutas.txt. Nesse arquivo, temos o texto "Maçã, banana, maracujá, manga". Usando **git init** nesse arquivo ele começa a ser versionado pelo sistema. Logo após eu adiciono a fruta "laranja" ao arquivo deixando o arquivo com uma alteração não vista por ninguém por enquanto.
 
-Usando o **git status** vou poder ver se há alguma diferença entre o arquivo que eu modifiquei e o arquivo que está no repositório remoto. Vendo que há diferença, posso usar o **git diff** para ver os detalhes entre essas diferenças. O terminal vai me mostrar que a diferença é a palavra "laranja". 
+Usando o **git status** vou poder ver se há alguma diferença entre o arquivo que eu modifiquei e o arquivo que está no repositório remoto. Vendo que há diferença, posso usar o **git diff** para ver os detalhes entre essas diferenças. O terminal vai me mostrar que a diferença é a palavra "laranja".
 
 Vendo que está tudo ok, eu uso o comando **git add .** para adicionar todas as mudanças do arquivo atual para o índice, seguidos de um **git commit -m "Adicionando a fruta laranja ao arquivo"** e um **git push origin master**. Nesse ponto, eu já analisei e adicionei todas as diferenças ao meu repositório remoto, usando apenas alguns comandos.
 
 ## O que é o Github?
 
-*"Mas o que seria o Github? Não é a mesma coisa que o git então?"*
+_"Mas o que seria o Github? Não é a mesma coisa que o git então?"_
 
 A resposta é não. O [Github](https://github.com/) é um uma plataforma usada para hospedar projetos que usam o git, ou seja, que possuem o controle de versão. E não existe só o Github. Temos na lista de plataformas com o mesmo propósito o BitBucket, o GitLab, entre outros. Mas com toda certeza o Github é o mais utilizado, possuindo mais de 40 milhões de usuários pelo mundo.
 
@@ -53,7 +53,6 @@ Muita gente diz que o Github é a rede social dos programadores. Bom, eu particu
 ---
 
 **Referências:**
+
 - [How distributed version control systems work](http://www.helloworldseries.com/?p=96)
 - [GitHub publishes 2019 annual report, with more than 40 million users](https://www.firstxw.com/view/241562.html)
-
-

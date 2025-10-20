@@ -1,8 +1,7 @@
-
 export interface BlogStats {
-    likes: number
-    views: number
-    likedBy: string[] // Store user IDs/IPs who liked
+  likes: number
+  views: number
+  likedBy: string[] // Store user IDs/IPs who liked
 }
 
 const REST_URL = process.env.UPSTASH_REDIS_REST_URL
@@ -25,19 +24,29 @@ async function upstashGet(key: string): Promise<string | null> {
 }
 
 async function upstashSet(key: string, value: string): Promise<void> {
-  const res = await fetch(`${REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${REST_TOKEN}` },
-  })
+  const res = await fetch(
+    `${REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${REST_TOKEN}` },
+    }
+  )
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`Upstash SET failed: ${res.status} ${text}`)
   }
 }
 
-async function upstashScan(cursor: string, pattern = '*', count = 100): Promise<{ cursor: string; keys: string[] }> {
+async function upstashScan(
+  cursor: string,
+  pattern = '*',
+  count = 100
+): Promise<{ cursor: string; keys: string[] }> {
   const url = `${REST_URL}/scan/${encodeURIComponent(cursor)}?match=${encodeURIComponent(pattern)}&count=${count}`
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${REST_TOKEN}` }, cache: 'no-store' })
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${REST_TOKEN}` },
+    cache: 'no-store',
+  })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`Upstash SCAN failed: ${res.status} ${text}`)
@@ -63,30 +72,30 @@ async function upstashMGet(keys: string[]): Promise<(string | null)[]> {
 }
 
 async function getAllKeysAndValues(pattern = '*') {
-  const keys: string[] = [];
-  let cursor = "0";
+  const keys: string[] = []
+  let cursor = '0'
 
   do {
     const reply = await upstashScan(cursor, pattern, 100)
     cursor = reply.cursor
     keys.push(...reply.keys)
-  } while (cursor !== "0");
+  } while (cursor !== '0')
 
-  if (keys.length === 0) return {};
+  if (keys.length === 0) return {}
 
   const values = await upstashMGet(keys)
 
   console.log(keys, values[0])
 
   return keys.reduce<Record<string, BlogStats | null>>((acc, key, i) => {
-    acc[key] = values[i] ? JSON.parse(values[i]) : null;
-    return acc;
-  }, {});
+    acc[key] = values[i] ? JSON.parse(values[i]) : null
+    return acc
+  }, {})
 }
 
 export async function getBlogStatsBySlug(slug: string): Promise<BlogStats> {
   const data = (await upstashGet(`blog-stats:${slug}`)) || '{}'
-  return JSON.parse(data) || { likes: 0, views: 0, likedBy: [] };
+  return JSON.parse(data) || { likes: 0, views: 0, likedBy: [] }
 }
 
 // Write stats to file
@@ -106,10 +115,10 @@ export async function getPostStats(slug: string): Promise<{ likes: number; views
 // Increment view count
 export async function incrementViews(slug: string): Promise<{ likes: number; views: number }> {
   const stats = await getBlogStatsBySlug(slug)
-  
+
   stats.views += 1
   await writeBlogStats(slug, stats)
-  
+
   return {
     likes: stats.likes,
     views: stats.views,
@@ -117,30 +126,33 @@ export async function incrementViews(slug: string): Promise<{ likes: number; vie
 }
 
 // Toggle like (add or remove)
-export async function toggleLike(slug: string, userId: string): Promise<{ 
-  likes: number; 
-  views: number; 
-  isLiked: boolean 
+export async function toggleLike(
+  slug: string,
+  userId: string
+): Promise<{
+  likes: number
+  views: number
+  isLiked: boolean
 }> {
   const stats = await getBlogStatsBySlug(slug)
 
   if (!stats.likedBy) {
     stats.likedBy = []
   }
-  
+
   const likedBy = stats.likedBy
   const isCurrentlyLiked = likedBy.includes(userId)
-  
+
   if (isCurrentlyLiked) {
-    stats.likedBy = likedBy.filter(id => id !== userId)
+    stats.likedBy = likedBy.filter((id) => id !== userId)
     stats.likes = Math.max(0, stats.likes - 1)
   } else {
     stats.likedBy.push(userId)
     stats.likes += 1
   }
-  
+
   await writeBlogStats(slug, stats)
-  
+
   return {
     likes: stats.likes,
     views: stats.views,

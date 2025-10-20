@@ -23,18 +23,18 @@ In a very basic example, our client will be a site that shows a list of profiles
 
 When clicking on the card, the client goes to another page, with details of each profile, showing the data in more detail, such as the position and a description of the user.
 
-Well, this data is not in our client, but in our server, which when requested, returns the data in *JSON* format, as follows:
+Well, this data is not in our client, but in our server, which when requested, returns the data in _JSON_ format, as follows:
 
 ```json
 {
   "name": "Lucas Andrade",
-  "state": "Rio de Janeiro", 
+  "state": "Rio de Janeiro",
   "description": "Software Developer. Learning to learn and to teach. Weekly articles... but sometimes not. Github: olucasandrade",
   "employment": "Software Engineer"
 }
 ```
 
-In addition, there is another table in our database, which contains the photos of each user, a primary one, another secondary one, with an *id* that references the user. Let's suppose that the client should show the user's secondary photo on the first screen, and the main photo on the details screen. Therefore, one more request would be made, also returning a *JSON* in this format:
+In addition, there is another table in our database, which contains the photos of each user, a primary one, another secondary one, with an _id_ that references the user. Let's suppose that the client should show the user's secondary photo on the first screen, and the main photo on the details screen. Therefore, one more request would be made, also returning a _JSON_ in this format:
 
 ```json
 {
@@ -44,7 +44,7 @@ In addition, there is another table in our database, which contains the photos o
 }
 ```
 
-For both screens, our client will query the same server, which will respond with this specific *JSON*.
+For both screens, our client will query the same server, which will respond with this specific _JSON_.
 
 However, this basic example serves to expose some problems, which GraphQL proposes to solve.
 
@@ -66,7 +66,7 @@ Especially in an API written in NodeJS or languages similar to Javascript, there
 
 ## How does a GraphQL API work?
 
-To start the conversation, when talking about GraphQL, we no longer talk about distinct routes or endpoints: Each call is made to the same route, by the *POST* method, with the call specifications in the request body, as follows:
+To start the conversation, when talking about GraphQL, we no longer talk about distinct routes or endpoints: Each call is made to the same route, by the _POST_ method, with the call specifications in the request body, as follows:
 
 ```graphql
 query getUser($id: ID!, $where: UserInputWhere) {
@@ -82,15 +82,16 @@ query getUser($id: ID!, $where: UserInputWhere) {
 
 Where:
 
-- *Query* is the type of operation (in this case, the client is actually seeking information);
+- _Query_ is the type of operation (in this case, the client is actually seeking information);
 - `getUser` is the name of the operation, so that the GraphQL API knows exactly what to do;
-- `$id` and `$where` are the names of the variables received by the query. For example, the *id* is being passed mandatory for the API to search for the user by it;
+- `$id` and `$where` are the names of the variables received by the query. For example, the _id_ is being passed mandatory for the API to search for the user by it;
 - `name`, `state`, `description`, `employment` and `pictures` are the fields returned by the API.
 
 To understand in a very basic way how GraphQL works on the server side, let's define:
 
 ### Input Type
-First, let's define the Input, which is what the query will receive as an argument. In our example we'll call it `UserInputWhere`, having a strongly typed and mandatory *ID* (the mandatory nature of a field in GraphQL is defined by the presence of the exclamation):
+
+First, let's define the Input, which is what the query will receive as an argument. In our example we'll call it `UserInputWhere`, having a strongly typed and mandatory _ID_ (the mandatory nature of a field in GraphQL is defined by the presence of the exclamation):
 
 ```graphql
 input UserInputWhere {
@@ -99,7 +100,8 @@ input UserInputWhere {
 ```
 
 ### Type Definition
-Now, we define the *Type*, which is what our query will return to the client. In this case, we will have the same fields as the REST API return, being strongly typed this time, and also mandatory:
+
+Now, we define the _Type_, which is what our query will return to the client. In this case, we will have the same fields as the REST API return, being strongly typed this time, and also mandatory:
 
 ```graphql
 type User {
@@ -112,7 +114,8 @@ type User {
 ```
 
 ### Enum
-The `pictures` field will also receive an argument, as if it were a *query* within the *query*. It is not mandatory (does not contain exclamation) and is of type `PictureEnum`:
+
+The `pictures` field will also receive an argument, as if it were a _query_ within the _query_. It is not mandatory (does not contain exclamation) and is of type `PictureEnum`:
 
 ```graphql
 enum PictureEnum {
@@ -123,7 +126,8 @@ enum PictureEnum {
 ```
 
 ### Query Definition
-Then, we define the *query* with the name `getUser`, with the *Input* being the `UserInputWhere` defined above and returning the *type User*:
+
+Then, we define the _query_ with the name `getUser`, with the _Input_ being the `UserInputWhere` defined above and returning the _type User_:
 
 ```graphql
 type Query {
@@ -132,6 +136,7 @@ type Query {
 ```
 
 ### Resolvers
+
 Finally, we define the resolvers, which are a kind of functions responsible for returning a result for each field, whether it's a Query or a specific field of a Type:
 
 ```javascript
@@ -139,13 +144,13 @@ const resolvers = {
   Query: {
     getUser: async (parent, { where }) => {
       return await getUserById(where.id)
-    }
+    },
   },
   User: {
     pictures: async (parent, { pictureType }) => {
       return await getUserPictures(parent.id, pictureType)
-    }
-  }
+    },
+  },
 }
 ```
 
@@ -155,7 +160,7 @@ const resolvers = {
 
 `{ id: "invalid id" }`
 
-GraphQL itself by default will not accept this query, because the *ID* doesn't have a valid type. This helps a lot in languages that are not strongly typed. As well as in the return from server to client, if the function defined in the resolvers doesn't return the name field, *GraphQL* will also automatically report the error, since in the *Type* this field is defined as mandatory.
+GraphQL itself by default will not accept this query, because the _ID_ doesn't have a valid type. This helps a lot in languages that are not strongly typed. As well as in the return from server to client, if the function defined in the resolvers doesn't return the name field, _GraphQL_ will also automatically report the error, since in the _Type_ this field is defined as mandatory.
 
 **The other very strong point of GraphQL is in the query itself.** In the case of our client above, if I need another screen just searching for a user's state, I can just remove the other fields from inside the braces, as follows:
 
@@ -183,7 +188,7 @@ In our client example, we can pass a `{ pictureType: PRIMARY }` on the first scr
 
 **But it can hinder more than help in cases of:**
 
-- **Applications where it's necessary to identify errors by HTTP Status**: Remember, in GraphQL everything is *POST* and a negative point is that many errors can sometimes come with status 200;
+- **Applications where it's necessary to identify errors by HTTP Status**: Remember, in GraphQL everything is _POST_ and a negative point is that many errors can sometimes come with status 200;
 - **Applications that need caching**: Unlike REST, a GraphQL API doesn't have automatic cache storage;
 - **APIs that need very specific documentation**: Although GraphQL has automatic and very useful documentation, only one tool is used for it, unlike REST which has a range of options.
 
@@ -202,5 +207,3 @@ So, did you like the article? Have you used any of the options? Do you have your
 - [GraphQL Docs](https://graphql.org/learn/)
 - [What is REST?](https://restfulapi.net)
 - [Evolution of APIs](https://blog.api.rakuten.net/evolution-of-apis/)
-
-

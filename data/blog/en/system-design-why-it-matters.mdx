@@ -9,7 +9,6 @@ summary: 'Discover why System Design is fundamental for building scalable and re
 images: ['/static/images/system_design.webp']
 ---
 
-
 Have you ever stopped to think about how your favorite bank's app can process thousands of payments per day without failures?
 
 How your favorite streaming platform delivers the same content in different parts of the world with incredibly low latency?
@@ -28,10 +27,10 @@ As I mentioned above, System Design is a concept that's a bit more high-level th
 
 It's asking yourself:
 
-* How many servers do we need?
-* How do users connect to my system?
-* What if my server fails?
-* What if my demand comes from another location?
+- How many servers do we need?
+- How do users connect to my system?
+- What if my server fails?
+- What if my demand comes from another location?
 
 This ensures that your app not only works, but works at scale, with security, and efficiently.
 
@@ -59,11 +58,11 @@ Infrastructure is expensive. Every poorly optimized request, every unnecessary l
 A poorly designed system can burn through a month's budget in a few hours. That's why understanding the impact of each choice, from architecture to instance type, from database to cache, is essential.
 Scaling is good, but scaling efficiently is what separates a sustainable operation from a financial problem about to explode.
 
-***
+---
 
 ## The importance in indie hacking (and in large companies)
 
-When we're in the indie hacking phase, creating something small, validating an idea, testing an MVP, it's easy to fall into the trap of thinking: *"System Design is a big tech thing, I don't need that now."*
+When we're in the indie hacking phase, creating something small, validating an idea, testing an MVP, it's easy to fall into the trap of thinking: _"System Design is a big tech thing, I don't need that now."_
 
 But that's exactly where the mistake lies. Even a simple solo project needs to have a minimum of architectural design to not become chaos with growth.
 Understanding concepts like **SECURITY,** **background jobs**, **efficient storage** can be what differentiates a functional MVP from a product that can handle 10x more users without collapsing.
@@ -79,8 +78,8 @@ Knowing how **systems communicate, scale, and fail** is the type of skill that t
 
 ## Moments when System Design shined
 
-1. **Netflix:** the perfect example of distributed architecture and resilience. The company created *Chaos Monkey*, a system that **randomly takes down instances** to ensure the service remains stable even with failures.
-2. **Amazon:** from the beginning, designed to support partial failures and scale horizontally. The concept of *microservices* was born from a real need to keep operations stable even with independent teams and services.
+1. **Netflix:** the perfect example of distributed architecture and resilience. The company created _Chaos Monkey_, a system that **randomly takes down instances** to ensure the service remains stable even with failures.
+2. **Amazon:** from the beginning, designed to support partial failures and scale horizontally. The concept of _microservices_ was born from a real need to keep operations stable even with independent teams and services.
 3. **Cloudflare:** thousands of data centers around the world delivering minimal latency through impeccable network and distributed cache design.
 4. **WhatsApp:** even with a small team in its early years, it supported millions of messages per second using an event-driven architecture, queues, and intelligent replication.
 
@@ -98,30 +97,30 @@ The good news is that today there are **incredible resources** (free and paid) t
 
 ### Free materials
 
-* [System Design Primer (GitHub)](https://github.com/donnemartin/system-design-primer)
+- [System Design Primer (GitHub)](https://github.com/donnemartin/system-design-primer)
   The most complete and didactic repository on the subject. Explains everything from basic concepts to complex architectures, with diagrams and interview questions.
-* [ByteByteGo (YouTube)](https://www.youtube.com/c/ByteByteGo)
-  Alex Xu's channel, author of the book *System Design Interview*. The videos are short, didactic, and always illustrated with perfect animations to visualize how systems work.
-* [System Design In a Hurry](www.hellointerview.com/learn/system-design/in-a-hurry/introduction)
+- [ByteByteGo (YouTube)](https://www.youtube.com/c/ByteByteGo)
+  Alex Xu's channel, author of the book _System Design Interview_. The videos are short, didactic, and always illustrated with perfect animations to visualize how systems work.
+- [System Design In a Hurry](www.hellointerview.com/learn/system-design/in-a-hurry/introduction)
   A guide of articles and videos from end to end explaining high and low level system design concepts. Worth studying it as a roadmap
-* [Grokking System Design Concepts (Educative Free Samples)](https://www.educative.io/courses/grokking-modern-system-design-interview-for-engineers-managers)
+- [Grokking System Design Concepts (Educative Free Samples)](https://www.educative.io/courses/grokking-modern-system-design-interview-for-engineers-managers)
   Even though the complete course is paid, several introductory lessons are free and help understand the logic of System Design interviews.
-* **Cloud service documentation**
-  AWS, Google Cloud, and Azure have entire sections on *architecture patterns* and *reference architectures*. Reading these guides is seeing *System Design* happening in practice.
+- **Cloud service documentation**
+  AWS, Google Cloud, and Azure have entire sections on _architecture patterns_ and _reference architectures_. Reading these guides is seeing _System Design_ happening in practice.
 
 ### Books
 
-* **Designing Data-Intensive Applications (Martin Kleppmann**)
+- **Designing Data-Intensive Applications (Martin Kleppmann**)
   Considered the bible of modern System Design. It deeply explains how databases, queues, replication, and fault tolerance work at large scale.
-* **System Design Interview (Alex Xu)**
-  Excellent recommendation for those who want to understand how to think *end-to-end* when designing a system.
-* **Site Reliability Engineering (Google)**
+- **System Design Interview (Alex Xu)**
+  Excellent recommendation for those who want to understand how to think _end-to-end_ when designing a system.
+- **Site Reliability Engineering (Google)**
   An inside look at Google on how large systems remain resilient.
 
 ### Practice for real
 
 1. **Choose a product you use every day** (Instagram, Uber, Spotify, WhatsApp) and try to draw its architecture on a board.
-   Ask yourself: *how do they store data? how do they handle peaks? what happens if a service goes down?*
+   Ask yourself: _how do they store data? how do they handle peaks? what happens if a service goes down?_
 2. **Create your own mini distributed system.**
    Use RabbitMQ, Redis, and a simple database to simulate requests, cache, and queues. You'll learn 10x more than just reading about it.
 3. **Participate in technical discussions.**
@@ -129,4 +128,3 @@ The good news is that today there are **incredible resources** (free and paid) t
 4. **Finally, keep an eye on my projects section: I'm preparing a free tool to encourage practice in your daily routine.** Coming soon.
 
 I hope my words have been useful and... See you next time 👋
-
