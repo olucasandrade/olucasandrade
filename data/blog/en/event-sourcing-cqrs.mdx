@@ -1,0 +1,420 @@
+---
+title: 'Event Sourcing & CQRS'
+date: '2025-02-01'
+language: en
+tags: ['system-design', 'event-sourcing', 'cqrs', 'architecture']
+authors: ['lucas-andrade']
+draft: true
+summary: 'What if instead of storing the current state of your data, you stored every change that ever happened? That is event sourcing. Pair it with CQRS and you get a powerful (but complex) architecture pattern.'
+images: ['/static/images/system_design.webp']
+---
+
+Have you ever wished you could "undo" something in your database? Or trace exactly how a piece of data got to its current state? Or replay everything that happened in your system from the beginning?
+
+Traditional databases store the current state. You update a row, the old value is gone. But what if you stored every change as an immutable event instead?
+
+Welcome to **Event Sourcing** and its best friend, **CQRS**.
+
+## The Traditional Way (CRUD)
+
+In a typical CRUD application, you have a table and you mutate it directly.
+
+```python
+# Traditional CRUD - Shopping Cart
+def add_to_cart(user_id, product_id, quantity):
+    cart = db.query("SELECT * FROM carts WHERE user_id = %s", user_id)
+    if cart:
+        db.execute("UPDATE carts SET items = items || %s WHERE user_id = %s",
+                   json.dumps({"product_id": product_id, "qty": quantity}), user_id)
+    else:
+        db.execute("INSERT INTO carts (user_id, items) VALUES (%s, %s)",
+                   user_id, json.dumps([{"product_id": product_id, "qty": quantity}]))
+
+def remove_from_cart(user_id, product_id):
+    db.execute("UPDATE carts SET items = remove_item(items, %s) WHERE user_id = %s",
+               product_id, user_id)
+```
+
+After these operations, all you know is the current state. You have no idea:
+- When was that item added?
+- Was it removed and re-added?
+- How many times did the user change the quantity?
+
+The history is gone.
+
+## Event Sourcing: Store the Story, Not Just the Ending
+
+With event sourcing, instead of updating state directly, you store a sequence of **events** that describe what happened.
+
+```python
+# Event Sourcing - Shopping Cart
+events = [
+    {"type": "CartCreated",     "user_id": 123, "timestamp": "2025-01-15T10:00:00"},
+    {"type": "ItemAdded",       "user_id": 123, "product_id": 456, "qty": 2, "timestamp": "2025-01-15T10:01:00"},
+    {"type": "ItemAdded",       "user_id": 123, "product_id": 789, "qty": 1, "timestamp": "2025-01-15T10:05:00"},
+    {"type": "QuantityChanged", "user_id": 123, "product_id": 456, "qty": 3, "timestamp": "2025-01-15T10:10:00"},
+    {"type": "ItemRemoved",     "user_id": 123, "product_id": 789, "timestamp": "2025-01-15T10:15:00"},
+]
+```
+
+To get the current state, you **replay** the events:
+
+```python
+def get_cart_state(user_id):
+    events = event_store.get_events(stream=f"cart-{user_id}")
+    cart = {"user_id": user_id, "items": {}}
+
+    for event in events:
+        if event["type"] == "CartCreated":
+            cart["items"] = {}
+        elif event["type"] == "ItemAdded":
+            cart["items"][event["product_id"]] = event["qty"]
+        elif event["type"] == "QuantityChanged":
+            cart["items"][event["product_id"]] = event["qty"]
+        elif event["type"] == "ItemRemoved":
+            del cart["items"][event["product_id"]]
+
+    return cart
+
+# Result: {"user_id": 123, "items": {456: 3}}
+```
+
+## The Event Store
+
+The event store is an append-only log. Events are never updated or deleted.
+
+```python
+class EventStore:
+    def __init__(self, db):
+        self.db = db
+        # Create the events table
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id SERIAL PRIMARY KEY,
+                stream_id VARCHAR(255) NOT NULL,
+                event_type VARCHAR(255) NOT NULL,
+                data JSONB NOT NULL,
+                metadata JSONB DEFAULT '{}',
+                version INT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+
+                UNIQUE(stream_id, version)  -- optimistic concurrency
+            )
+        """)
+
+    def append(self, stream_id, event_type, data, expected_version=None):
+        if expected_version is not None:
+            current = self.get_version(stream_id)
+            if current != expected_version:
+                raise ConcurrencyError("Stream was modified by another process")
+
+        version = (expected_version or 0) + 1
+        self.db.execute(
+            "INSERT INTO events (stream_id, event_type, data, version) VALUES (%s, %s, %s, %s)",
+            stream_id, event_type, json.dumps(data), version
+        )
+
+    def get_events(self, stream_id, from_version=0):
+        return self.db.query(
+            "SELECT * FROM events WHERE stream_id = %s AND version > %s ORDER BY version",
+            stream_id, from_version
+        )
+
+    def get_version(self, stream_id):
+        result = self.db.query(
+            "SELECT MAX(version) FROM events WHERE stream_id = %s", stream_id
+        )
+        return result[0] or 0
+```
+
+### Optimistic Concurrency
+
+Notice the `expected_version` parameter? That's how you handle concurrent writes without locks.
+
+```python
+# Two users try to modify the same cart simultaneously
+# User A reads version 5, tries to add item
+store.append("cart-123", "ItemAdded", {"product_id": 1}, expected_version=5)  # Success! Now version 6
+
+# User B also read version 5, tries to add item
+store.append("cart-123", "ItemAdded", {"product_id": 2}, expected_version=5)  # FAILS! Version is now 6
+
+# User B must reload, re-read version 6, and retry
+```
+
+## Snapshots: Don't Replay Everything
+
+If a cart has 10,000 events, replaying all of them every time is way too slow. That's where **snapshots** come in.
+
+```python
+class SnapshotStore:
+    def get_snapshot(self, stream_id):
+        return self.db.query(
+            "SELECT * FROM snapshots WHERE stream_id = %s ORDER BY version DESC LIMIT 1",
+            stream_id
+        )
+
+    def save_snapshot(self, stream_id, state, version):
+        self.db.execute(
+            "INSERT INTO snapshots (stream_id, state, version) VALUES (%s, %s, %s)",
+            stream_id, json.dumps(state), version
+        )
+
+def get_cart_state(user_id):
+    stream_id = f"cart-{user_id}"
+
+    # Try to load from snapshot first
+    snapshot = snapshot_store.get_snapshot(stream_id)
+
+    if snapshot:
+        cart = snapshot["state"]
+        from_version = snapshot["version"]
+    else:
+        cart = {"user_id": user_id, "items": {}}
+        from_version = 0
+
+    # Only replay events AFTER the snapshot
+    events = event_store.get_events(stream_id, from_version=from_version)
+
+    for event in events:
+        cart = apply_event(cart, event)
+
+    # Save new snapshot if we replayed many events
+    if len(events) > 100:
+        current_version = from_version + len(events)
+        snapshot_store.save_snapshot(stream_id, cart, current_version)
+
+    return cart
+```
+
+Now instead of replaying 10,000 events, you load a snapshot and replay only the events since the last snapshot. Much better.
+
+## CQRS: Separate Reads from Writes
+
+**Command Query Responsibility Segregation** means using different models for reading data and writing data.
+
+```
+Traditional:
+┌──────────┐     ┌──────────┐
+│  Read &  │────▶│  Single  │
+│  Write   │     │   Model  │
+└──────────┘     └──────────┘
+
+CQRS:
+┌──────────┐     ┌──────────┐
+│ Commands │────▶│  Write   │
+│ (writes) │     │  Model   │
+└──────────┘     └──────────┘
+
+┌──────────┐     ┌──────────┐
+│ Queries  │────▶│  Read    │
+│ (reads)  │     │  Model   │
+└──────────┘     └──────────┘
+```
+
+### Why Separate Them?
+
+Think about an e-commerce app:
+- **Writes** need strong consistency, validation, business rules
+- **Reads** need to be fast, can be denormalized, might tolerate slight staleness
+
+```python
+# COMMAND side: handles writes with full business logic
+class AddItemCommand:
+    def execute(self, cart_id, product_id, quantity):
+        # Load current state from events
+        cart = Cart.from_events(event_store.get_events(f"cart-{cart_id}"))
+
+        # Business rules
+        if not product_service.is_available(product_id):
+            raise ProductUnavailableError()
+        if cart.item_count() >= 50:
+            raise CartFullError()
+        if quantity <= 0:
+            raise InvalidQuantityError()
+
+        # Append event (not mutating state directly)
+        event_store.append(f"cart-{cart_id}", "ItemAdded", {
+            "product_id": product_id,
+            "quantity": quantity,
+            "price": product_service.get_price(product_id)
+        })
+
+# QUERY side: optimized for fast reads
+class CartQueryService:
+    def get_cart(self, cart_id):
+        # Read from a denormalized read model (e.g., Redis or a read-optimized table)
+        return redis.hgetall(f"cart-view:{cart_id}")
+
+    def get_cart_total(self, cart_id):
+        return float(redis.get(f"cart-total:{cart_id}") or 0)
+```
+
+### Projections: Building Read Models from Events
+
+The read model is built by **projections** that listen to events and update a read-optimized store.
+
+```python
+class CartProjection:
+    """Listens to cart events and builds a read-friendly view."""
+
+    def __init__(self, redis_client):
+        self.redis = redis_client
+
+    def handle(self, event):
+        if event["type"] == "ItemAdded":
+            self._on_item_added(event)
+        elif event["type"] == "ItemRemoved":
+            self._on_item_removed(event)
+        elif event["type"] == "QuantityChanged":
+            self._on_quantity_changed(event)
+
+    def _on_item_added(self, event):
+        cart_key = f"cart-view:{event['cart_id']}"
+        self.redis.hset(cart_key, event["product_id"], json.dumps({
+            "quantity": event["quantity"],
+            "price": event["price"],
+            "added_at": event["timestamp"]
+        }))
+        self._update_total(event["cart_id"])
+
+    def _on_item_removed(self, event):
+        cart_key = f"cart-view:{event['cart_id']}"
+        self.redis.hdel(cart_key, event["product_id"])
+        self._update_total(event["cart_id"])
+
+    def _update_total(self, cart_id):
+        cart_key = f"cart-view:{cart_id}"
+        items = self.redis.hgetall(cart_key)
+        total = sum(
+            json.loads(v)["price"] * json.loads(v)["quantity"]
+            for v in items.values()
+        )
+        self.redis.set(f"cart-total:{cart_id}", total)
+```
+
+The beauty here is you can build **multiple projections** from the same events:
+
+```python
+# Projection 1: Cart view (for the user)
+cart_projection.handle(event)
+
+# Projection 2: Analytics (for the business)
+analytics_projection.handle(event)  # Track popular products, abandonment rates
+
+# Projection 3: Inventory (for the warehouse)
+inventory_projection.handle(event)  # Adjust reserved stock
+
+# Projection 4: Search index (for product search)
+search_projection.handle(event)  # Update product popularity scores
+```
+
+And if a projection has a bug? Just delete its read model, fix the code, and replay all events from the beginning. The event store is your single source of truth.
+
+## Event Sourcing + CQRS Together
+
+This is where the magic happens. Combine both patterns:
+
+```
+Commands ──▶ Event Store (append-only) ──▶ Projections ──▶ Read Models
+                                                              │
+Queries ◀─────────────────────────────────────────────────────┘
+
+┌─────────┐    ┌─────────────┐    ┌────────────┐    ┌──────────┐
+│ Command │───▶│ Event Store │───▶│ Projection │───▶│ Read DB  │
+│ Handler │    │ (PostgreSQL)│    │ (Consumer) │    │ (Redis)  │
+└─────────┘    └─────────────┘    └────────────┘    └──────────┘
+                                                         │
+                                  ┌─────────────┐        │
+                                  │ Query       │◀───────┘
+                                  │ Handler     │
+                                  └─────────────┘
+```
+
+1. Command comes in (e.g., "add item to cart")
+2. Command handler validates and appends event to event store
+3. Projections consume events and update read models
+4. Queries read from optimized read models
+
+## Pros and Cons
+
+### Why Event Sourcing is awesome:
+
+- **Complete audit trail.** Every change is recorded forever. Perfect for finance, healthcare, compliance.
+- **Time travel.** You can rebuild state at any point in time. "What did this account look like last Tuesday?"
+- **Debug heaven.** Something went wrong? Replay the events and trace exactly what happened.
+- **Event-driven architecture.** Events are a natural fit for microservices communication.
+- **Multiple read models.** Build different views from the same events for different use cases.
+
+### Why Event Sourcing is hard:
+
+- **Steep learning curve.** It's a fundamentally different way of thinking about data.
+- **Event schema evolution.** What happens when you need to change an event's structure? You can't modify old events.
+- **Eventual consistency.** Read models may lag behind the event store. Users might not see their changes immediately.
+- **Storage.** Events accumulate forever. You need a strategy for archiving old events.
+- **Complexity.** For simple CRUD apps, this is massive overkill.
+
+### Event Schema Evolution
+
+This is one of the trickiest parts. Events are immutable, but your code evolves.
+
+```python
+# Version 1: Simple event
+{"type": "ItemAdded", "product_id": 456, "qty": 2}
+
+# Version 2: Now we need price
+{"type": "ItemAdded", "product_id": 456, "qty": 2, "price": 29.99}
+
+# Your projection must handle BOTH versions:
+def handle_item_added(event):
+    price = event.get("price", 0)  # Default for v1 events
+    quantity = event.get("qty") or event.get("quantity", 1)  # Handle field rename
+    # ...
+```
+
+You can also use **upcasters** that transform old events into the new format during replay:
+
+```python
+class EventUpcaster:
+    def upcast(self, event):
+        if event["type"] == "ItemAdded" and "price" not in event:
+            # V1 → V2: Add price from product catalog
+            event["price"] = product_catalog.get_historical_price(
+                event["product_id"], event["timestamp"]
+            )
+        return event
+```
+
+## When to Use Event Sourcing vs. Plain CRUD
+
+### Use Event Sourcing when:
+
+- You need a complete audit trail (financial systems, healthcare)
+- Business logic is complex with many state transitions
+- You need to answer "how did we get here?" questions
+- Multiple teams need different views of the same data
+- You're already doing event-driven architecture
+
+### Stick with CRUD when:
+
+- Simple domain with straightforward operations
+- No audit requirements
+- Small team that needs to ship fast
+- Data that doesn't change often
+- You don't need to replay history
+
+### The honest truth:
+
+Most applications don't need event sourcing. It's a powerful pattern, but the complexity cost is real. If you're building a blog, a todo app, or a simple e-commerce site, CRUD with a good ORM is probably the right choice.
+
+But if you're building a banking system, a collaborative editor, a trading platform, or anything where "what happened and when" matters as much as "what is the current state," event sourcing is worth the investment.
+
+---
+
+Event sourcing and CQRS are those patterns that change how you think about data. They're not easy, and they're definitely not for every project. But when they fit, they're incredibly powerful.
+
+The key takeaway: store what happened, and derive what you need from it. It's a different mindset, but once it clicks, you'll see opportunities for it everywhere.
+
+Got questions about implementing event sourcing? Working on a project where you're not sure if it's the right fit? Drop your thoughts in the comments!
+
+Until next time!

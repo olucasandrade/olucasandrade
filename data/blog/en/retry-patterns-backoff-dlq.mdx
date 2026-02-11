@@ -1,0 +1,289 @@
+---
+title: 'Retry Patterns, Backoff, and Dead Letter Queues'
+date: '2025-01-26'
+language: en
+tags: ['system-design', 'fault-tolerance', 'resilience', 'distributed-systems']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Networks fail. Services go down. Timeouts happen. Retry patterns, exponential backoff, and dead letter queues are your toolkit for handling the ugly reality of distributed systems.'
+images: ['/static/images/retry-patterns.png']
+---
+
+Here's a universal truth about distributed systems: things fail. Networks drop packets, services crash, databases time out. The question isn't IF failures happen, but HOW your system responds.
+
+Let's talk about retries, backoff, and what happens when even retries aren't enough.
+
+## The Naive Retry
+
+```python
+# Don't do this
+def call_service():
+    while True:
+        try:
+            return service.call()
+        except Exception:
+            pass  # Just try again immediately
+```
+
+This creates a "retry storm" - thousands of instances hammering a struggling service, making things worse.
+
+## Retry Strategies
+
+### Fixed Interval
+
+Wait the same amount of time between each retry.
+
+```python
+def retry_fixed(func, max_retries=3, delay=1.0):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(delay)  # Always 1 second
+```
+
+```
+Attempt 1 → fail → wait 1s
+Attempt 2 → fail → wait 1s
+Attempt 3 → fail → give up
+```
+
+Simple but still hammers the service at regular intervals.
+
+### Exponential Backoff
+
+Each retry waits exponentially longer.
+
+```python
+def retry_exponential(func, max_retries=5, base_delay=1.0):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
+```
+
+```
+Attempt 1 → fail → wait 1s
+Attempt 2 → fail → wait 2s
+Attempt 3 → fail → wait 4s
+Attempt 4 → fail → wait 8s
+Attempt 5 → fail → give up
+```
+
+Better! Gives the service more time to recover.
+
+### Exponential Backoff + Jitter
+
+The problem with pure exponential backoff: if 1000 clients fail at the same time, they all retry at the same intervals, creating synchronized thundering herds.
+
+Jitter adds randomness.
+
+```python
+import random
+
+def retry_with_jitter(func, max_retries=5, base_delay=1.0):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            delay = base_delay * (2 ** attempt)
+            jitter = random.uniform(0, delay)  # Full jitter
+            time.sleep(jitter)
+```
+
+Types of jitter:
+```python
+# Full jitter (most common)
+delay = random.uniform(0, base_delay * (2 ** attempt))
+
+# Equal jitter
+half = (base_delay * (2 ** attempt)) / 2
+delay = half + random.uniform(0, half)
+
+# Decorrelated jitter
+delay = min(max_delay, random.uniform(base_delay, last_delay * 3))
+```
+
+## What to Retry (and What Not)
+
+### Retry these (transient failures):
+- Network timeouts
+- HTTP 503 Service Unavailable
+- HTTP 429 Too Many Requests
+- Connection refused
+- Database connection pool exhausted
+
+### Don't retry these (permanent failures):
+- HTTP 400 Bad Request
+- HTTP 401 Unauthorized
+- HTTP 404 Not Found
+- Validation errors
+- Business logic errors
+
+```python
+def should_retry(exception):
+    if isinstance(exception, requests.Timeout):
+        return True
+    if isinstance(exception, requests.HTTPError):
+        return exception.response.status_code in [429, 500, 502, 503, 504]
+    if isinstance(exception, ConnectionError):
+        return True
+    return False
+```
+
+## Retry Budget
+
+Don't retry forever. Set limits:
+
+```python
+class RetryBudget:
+    def __init__(self, max_retries_per_minute=100):
+        self.max_retries = max_retries_per_minute
+        self.retry_count = 0
+        self.window_start = time.time()
+
+    def can_retry(self):
+        now = time.time()
+        if now - self.window_start > 60:
+            self.retry_count = 0
+            self.window_start = now
+
+        if self.retry_count >= self.max_retries:
+            return False
+
+        self.retry_count += 1
+        return True
+```
+
+## Dead Letter Queues (DLQ)
+
+When retries are exhausted and you can't process a message, it goes to the DLQ - a holding area for failed messages.
+
+```
+Main Queue → Consumer → Process
+                ↓ (fails after N retries)
+         Dead Letter Queue
+                ↓
+         • Manual investigation
+         • Automated reprocessing
+         • Alerting
+```
+
+### Implementation
+
+```python
+def process_message(message):
+    retry_count = message.headers.get('retry_count', 0)
+
+    try:
+        business_logic(message.body)
+        message.ack()
+    except TransientError:
+        if retry_count < MAX_RETRIES:
+            message.headers['retry_count'] = retry_count + 1
+            delay = calculate_backoff(retry_count)
+            queue.publish(message, delay=delay)
+        else:
+            dlq.publish(message, metadata={
+                'original_queue': 'orders',
+                'error': str(e),
+                'failed_at': datetime.now().isoformat(),
+                'retry_count': retry_count
+            })
+        message.ack()
+    except PermanentError:
+        # Don't retry, go straight to DLQ
+        dlq.publish(message, metadata={'error': str(e)})
+        message.ack()
+```
+
+### DLQ Best Practices
+
+1. **Include metadata:** Original queue, error message, timestamp, retry count
+2. **Set up alerts:** DLQ should never fill up silently
+3. **Build a reprocessing tool:** Easy way to push messages back to main queue
+4. **Review regularly:** DLQ messages reveal system problems
+
+## Timeout Strategies
+
+Retries without timeouts are dangerous:
+
+```python
+def call_with_timeout(func, timeout=5.0):
+    try:
+        return func(timeout=timeout)
+    except TimeoutError:
+        # Now retry
+        pass
+```
+
+### Cascading Timeouts
+
+In a chain of services, timeouts must cascade:
+
+```
+Client (timeout: 10s)
+  → Service A (timeout: 8s)
+    → Service B (timeout: 5s)
+      → Service C (timeout: 3s)
+```
+
+Each service must have a shorter timeout than its caller. Otherwise, the caller times out while downstream is still processing.
+
+## Idempotency Keys
+
+If you retry a request, how do you ensure it's not processed twice?
+
+```python
+def create_payment(amount, idempotency_key):
+    # Check if already processed
+    existing = db.get_payment_by_key(idempotency_key)
+    if existing:
+        return existing  # Return same result
+
+    # Process new payment
+    payment = process_payment(amount)
+    payment.idempotency_key = idempotency_key
+    db.save(payment)
+    return payment
+```
+
+```http
+POST /api/payments
+Idempotency-Key: unique-uuid-here
+Content-Type: application/json
+
+{"amount": 99.99}
+```
+
+## Putting It All Together
+
+```python
+from tenacity import retry, stop_after_attempt, wait_exponential_jitter
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential_jitter(initial=1, max=60, jitter=5),
+    retry=retry_if_exception_type(TransientError)
+)
+def reliable_call():
+    return external_service.call()
+```
+
+---
+
+The reality of distributed systems is messy. Retries with exponential backoff and jitter handle transient failures gracefully. Dead letter queues catch what retries can't fix. Together, they make your system resilient without hiding problems.
+
+Start with exponential backoff + jitter for all external calls. Add DLQs for async processing. You'll sleep much better at night.
+
+Questions? Drop them in the comments!
+
+Until next time!

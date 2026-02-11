@@ -1,0 +1,317 @@
+---
+title: 'Horizontal vs. Vertical Scaling'
+date: '2025-01-30'
+language: en
+tags: ['system-design', 'scalability', 'architecture', 'infrastructure']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Should you get a bigger machine or more machines? The eternal scaling debate. Let me break down when to scale up, when to scale out, and why the answer is usually "it depends."'
+images: ['/static/images/system_design.webp']
+---
+
+You built your app. It's growing. Users are coming in. Things start getting slow. And now you're faced with the big question: do I upgrade my server, or do I add more servers?
+
+This is the classic **vertical vs. horizontal scaling** debate, and understanding it is fundamental to designing systems that can actually grow.
+
+## Vertical Scaling (Scale Up)
+
+Vertical scaling is the simplest approach: you make your existing machine more powerful. More CPU, more RAM, faster disks. It's like upgrading your gaming PC.
+
+```
+Before:  4 CPU cores, 8GB RAM, 100GB SSD
+After:  32 CPU cores, 128GB RAM, 2TB NVMe SSD
+```
+
+### Why People Love It
+
+- **Zero code changes.** Your app doesn't need to know it's running on a bigger machine. It just... runs faster.
+- **No distributed complexity.** No need to worry about network partitions, data consistency across nodes, or any of that fun stuff.
+- **Simple operations.** One server to monitor, one server to back up, one server to secure.
+
+### Why It Has Limits
+
+Here's the thing: there's a ceiling. You can't infinitely make a machine bigger.
+
+```
+Small VM:     $20/month   →  2 cores, 4GB RAM
+Medium VM:    $80/month   →  8 cores, 32GB RAM
+Large VM:     $320/month  →  32 cores, 128GB RAM
+Monster VM:   $2,000/month → 96 cores, 768GB RAM
+Mega VM:      $10,000/month → ??? (you're running out of options)
+```
+
+Notice how the cost doesn't scale linearly? Doubling your resources often more than doubles your cost. And at some point, you literally can't buy a bigger machine.
+
+Also, vertical scaling gives you **zero fault tolerance.** Your one super-powerful server goes down? Everything goes down. Game over.
+
+## Horizontal Scaling (Scale Out)
+
+Horizontal scaling means adding more machines instead of bigger ones. Instead of one beefy server, you have a fleet of smaller ones working together.
+
+```
+Before:  1 server handling everything
+After:   10 servers sharing the load
+
+┌──────────────┐
+│ Load Balancer│
+└──────┬───────┘
+       │
+  ┌────┼────┐
+  │    │    │
+  ▼    ▼    ▼
+┌───┐┌───┐┌───┐
+│S1 ││S2 ││S3 │  ...more as needed
+└───┘└───┘└───┘
+```
+
+### Why It's Powerful
+
+- **Practically unlimited.** Need more capacity? Add more servers. Cloud providers make this trivially easy.
+- **Fault tolerance built-in.** One server dies? The others keep running. Users might not even notice.
+- **Cost-effective at scale.** Many small machines are often cheaper than one giant one.
+
+### Why It's Harder
+
+- **Your app must be designed for it.** You can't just throw 10 servers at a monolith that stores everything in local memory and expect it to work.
+- **Distributed systems are complex.** Network failures, data consistency, load balancing, service discovery... welcome to a whole new world of problems.
+- **Operational overhead.** More servers = more things to monitor, update, and manage.
+
+## Stateless vs. Stateful: The Key Difference
+
+This is where a lot of people get tripped up. Whether you can scale horizontally depends heavily on whether your application is **stateless** or **stateful**.
+
+### Stateless Services
+
+A stateless service doesn't store any user-specific data between requests. Every request contains everything the server needs to process it.
+
+```python
+# Stateless - any server can handle any request
+@app.route('/api/calculate-tax')
+def calculate_tax():
+    amount = request.json['amount']
+    rate = request.json['tax_rate']
+    return {'tax': amount * rate}
+```
+
+Scaling stateless services is easy. Just add more instances behind a load balancer and you're good.
+
+### Stateful Services
+
+A stateful service stores data locally that's needed for subsequent requests. Think session data, in-memory caches, WebSocket connections.
+
+```python
+# Stateful - only THIS server has the user's session
+sessions = {}
+
+@app.route('/api/add-to-cart')
+def add_to_cart():
+    session_id = request.cookies['session_id']
+    # This only works if the user hits the same server every time!
+    sessions[session_id]['cart'].append(request.json['item'])
+    return {'cart': sessions[session_id]['cart']}
+```
+
+Scaling stateful services is much harder. You either need:
+
+1. **Sticky sessions** (same user always goes to same server) - but then you lose fault tolerance
+2. **Externalize state** (move sessions to Redis, database, etc.) - the right solution
+
+```python
+# Externalized state - now any server can handle any request
+import redis
+r = redis.Redis()
+
+@app.route('/api/add-to-cart')
+def add_to_cart():
+    session_id = request.cookies['session_id']
+    cart = json.loads(r.get(f"cart:{session_id}") or "[]")
+    cart.append(request.json['item'])
+    r.set(f"cart:{session_id}", json.dumps(cart))
+    return {'cart': cart}
+```
+
+**The golden rule:** make your application services stateless, and push state to purpose-built data stores (databases, Redis, etc.).
+
+## Database Scaling: The Hard Part
+
+Scaling application servers is relatively straightforward. Scaling databases? That's where things get interesting.
+
+### Vertical Scaling for Databases
+
+Honestly, for most applications, vertically scaling your database is the right first move. A beefier database server with more RAM (for caching) and faster disks (for I/O) can take you surprisingly far.
+
+```
+Small:   4 cores, 16GB RAM   → handles ~1,000 queries/sec
+Medium:  16 cores, 64GB RAM  → handles ~10,000 queries/sec
+Large:   64 cores, 256GB RAM → handles ~50,000 queries/sec
+```
+
+### Horizontal Scaling for Databases
+
+When vertical scaling isn't enough, you have a few options:
+
+**Read Replicas:** Copy your data to multiple servers. Writes go to the primary, reads go to replicas.
+
+```
+┌─────────┐     writes     ┌─────────┐
+│  App    │────────────────▶│ Primary │
+│ Server  │                 └────┬────┘
+│         │                      │ replication
+│         │     reads       ┌────▼────┐
+│         │◀───────────────│ Replica │
+└─────────┘                └─────────┘
+```
+
+Good for read-heavy workloads (which most apps are).
+
+**Sharding:** Split your data across multiple databases based on some key.
+
+```python
+def get_db_for_user(user_id):
+    shard = user_id % NUM_SHARDS
+    return db_connections[shard]
+```
+
+Powerful but adds significant complexity. We'll dive deep into this in a future post.
+
+## Auto-Scaling: Let the Cloud Handle It
+
+Modern cloud platforms can automatically add or remove instances based on demand. This is a game-changer.
+
+```yaml
+# AWS Auto Scaling example
+auto_scaling:
+  min_instances: 2
+  max_instances: 20
+  target_cpu_utilization: 70%
+
+  scale_up:
+    cpu_above: 70%
+    for: 5 minutes
+    add: 2 instances
+
+  scale_down:
+    cpu_below: 30%
+    for: 10 minutes
+    remove: 1 instance
+```
+
+### Auto-Scaling Tips
+
+- **Always set minimums.** Never go below 2 instances (for fault tolerance).
+- **Scale up fast, scale down slow.** You want to handle traffic spikes quickly, but don't kill instances too early.
+- **Use the right metrics.** CPU isn't always the best indicator. Consider request latency, queue depth, or custom metrics.
+- **Watch out for cold starts.** If your app takes 2 minutes to boot, auto-scaling won't help with sudden spikes.
+
+```python
+# Custom metric for auto-scaling
+def report_scaling_metrics():
+    queue_depth = message_queue.size()
+    avg_latency = metrics.get_avg_latency(window='5m')
+    active_connections = server.connection_count()
+
+    cloudwatch.put_metric('QueueDepth', queue_depth)
+    cloudwatch.put_metric('AvgLatency', avg_latency)
+    cloudwatch.put_metric('ActiveConnections', active_connections)
+```
+
+## Cost Trade-offs
+
+Let's talk money, because this matters a lot in the real world.
+
+### Vertical Scaling Costs
+
+```
+Pros:
+- Lower operational costs (fewer things to manage)
+- No network overhead between nodes
+- Simpler architecture = fewer engineering hours
+
+Cons:
+- Hardware costs increase exponentially
+- Downtime during upgrades
+- Single point of failure (SPOF)
+```
+
+### Horizontal Scaling Costs
+
+```
+Pros:
+- Linear cost scaling (mostly)
+- Can use cheaper commodity hardware
+- Spot/preemptible instances for huge savings
+
+Cons:
+- Higher operational complexity
+- Network costs between nodes
+- Load balancer costs
+- More engineering time to design distributed systems
+```
+
+### Real-World Cost Comparison
+
+```
+Scenario: Handle 10,000 requests/second
+
+Vertical approach:
+  1x c5.18xlarge (72 vCPU, 144GB) = ~$2,200/month
+
+Horizontal approach:
+  10x c5.xlarge (4 vCPU, 8GB) = ~$1,200/month
+  + Load balancer = ~$20/month
+  + Extra operational overhead
+  Total: ~$1,220/month + ops time
+```
+
+At this scale, horizontal is cheaper in raw compute. But factor in the engineering time to make your app work across 10 servers, and the math gets more nuanced.
+
+## My Practical Advice
+
+Here's my take after seeing this play out many times:
+
+### Start Vertical
+
+When your app is young:
+1. **Use a single, decent server.** A $40-80/month VM handles more than most early-stage apps need.
+2. **Focus on writing good code.** Optimize queries, use caching, write efficient algorithms.
+3. **Keep your architecture simple.** Complexity is the enemy of shipping fast.
+
+### Go Horizontal When You Need To
+
+Signs it's time to scale horizontally:
+- **You're maxing out the biggest available instance.**
+- **You need fault tolerance.** One server going down can't take out your whole app.
+- **Traffic is spiky.** Auto-scaling can save you money during off-peak hours.
+- **You need geographic distribution.** Users in multiple regions need low latency.
+
+### The Hybrid Approach
+
+Most production systems use both:
+
+```
+┌─────────────────────────────────────────┐
+│             Load Balancer               │
+└──────────┬──────────┬──────────┬────────┘
+           │          │          │
+    ┌──────▼──┐ ┌─────▼───┐ ┌───▼──────┐
+    │ App     │ │ App     │ │ App      │  ← Horizontal
+    │ Server  │ │ Server  │ │ Server   │     (stateless)
+    └────┬────┘ └────┬────┘ └────┬─────┘
+         │          │           │
+         └──────────┼───────────┘
+                    │
+            ┌───────▼────────┐
+            │   Big Beefy    │  ← Vertical
+            │   Database     │     (stateful)
+            └────────────────┘
+```
+
+Horizontally scale your stateless application layer. Vertically scale your database for as long as possible. Add read replicas when reads become the bottleneck. Shard only when you absolutely must.
+
+---
+
+Scaling isn't about picking one approach and committing to it forever. It's about understanding your current needs, your growth trajectory, and making pragmatic choices. Start simple, measure everything, and scale when the data tells you to.
+
+Got questions about scaling strategies? Dealing with a specific scaling challenge? Drop it in the comments!
+
+Until next time!

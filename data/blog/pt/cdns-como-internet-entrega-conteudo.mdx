@@ -1,0 +1,296 @@
+---
+title: 'CDNs: Como a Internet Entrega Conteúdo em Milissegundos'
+date: '2025-01-19'
+language: pt
+tags: ['system-design', 'cdn', 'performance', 'infrastructure']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Já se perguntou como a Netflix faz streaming de vídeo pra milhões de usuários no mundo inteiro sem travar? A resposta são as CDNs. Vou te mostrar como essas redes de servidores fazem a internet parecer rápida, não importa onde você esteja.'
+images: ['/static/images/cdn.png']
+---
+
+Já se perguntou como você consegue assistir um vídeo no YouTube que tá hospedado nos EUA quando você tá sentado no Brasil, e mesmo assim carrega instantaneamente? Ou como um site com milhões de usuários no mundo inteiro consegue ser rápido pra todo mundo?
+
+A resposta é CDN - Content Delivery Network.
+
+## O Problema: Distância Importa
+
+O negócio é o seguinte sobre a internet: dados não podem viajar mais rápido que a velocidade da luz. E apesar da luz ser rápida, a Terra é grande.
+
+```
+São Paulo até Virginia (AWS us-east-1): ~7.500 km
+Velocidade da luz: 300.000 km/s
+Latência mínima teórica: ~25ms ida, 50ms ida e volta
+
+Mas na prática? 150-200ms por causa de:
+- Roteamento através de múltiplas redes
+- Processamento em cada hop
+- Overhead de protocolo
+```
+
+Então se seu servidor tá em Virginia e seu usuário tá em São Paulo, cada requisição tem que viajar 15.000 km ida e volta. Isso acumula rápido.
+
+Agora imagina servir uma página cheia de imagens. 50 imagens × 150ms = usuários esperando 7,5 segundos só de latência de rede. Inaceitável.
+
+## CDN: Trazendo Conteúdo Pra Perto
+
+Uma CDN é basicamente uma rede de servidores distribuídos pelo mundo. Em vez de todas as requisições irem pro seu servidor de origem, elas vão pro servidor CDN mais próximo (chamado de "edge" ou PoP - Point of Presence).
+
+```
+Sem CDN:
+Usuário (Brasil) ──────────────────────────> Origem (EUA)
+                      150ms de latência
+
+Com CDN:
+Usuário (Brasil) ────> Edge (São Paulo) ────> Origem (EUA)
+                       10ms latência    (só no cache miss)
+```
+
+A CDN faz cache do seu conteúdo nas localizações edge. Quando um usuário pede algo, o servidor edge:
+1. **Cache hit:** Retorna o conteúdo imediatamente (rápido!)
+2. **Cache miss:** Busca da origem, guarda no cache, depois retorna (lento na primeira vez, rápido depois)
+
+## O Que Colocar numa CDN?
+
+**Perfeito pra CDN (conteúdo estático):**
+- Imagens, vídeos, arquivos de áudio
+- Arquivos CSS, JavaScript
+- Fontes
+- Documentos PDF
+- Páginas HTML estáticas
+
+**Pode usar CDN (com cuidado):**
+- Respostas de API (se cacheáveis)
+- Páginas dinâmicas com TTL curto
+- Conteúdo personalizado com edge computing
+
+**Não é ideal pra CDN:**
+- Dados em tempo real
+- Conteúdo específico do usuário
+- Dados que mudam frequentemente
+- Dados sensíveis/privados
+
+## Como o Cache Funciona
+
+A mágica das CDNs tá no cache. Quando você configura uma CDN, você define regras de cache que dizem aos servidores edge por quanto tempo guardar o conteúdo.
+
+```http
+# Headers de Cache HTTP
+
+Cache-Control: public, max-age=31536000
+# Cache por 1 ano, qualquer um pode cachear
+
+Cache-Control: private, max-age=3600
+# Cache por 1 hora, só o navegador pode cachear (não a CDN)
+
+Cache-Control: no-store
+# Nunca cacheia isso
+
+Cache-Control: no-cache
+# Pode cachear, mas deve revalidar com a origem antes de usar
+```
+
+### Invalidação de Cache
+
+Aqui é a parte complicada. O que acontece quando você atualiza conteúdo que já tá cacheado?
+
+Opções:
+1. **Esperar o TTL expirar:** Simples mas lento
+2. **Purge/Invalidate:** Diz pra CDN deletar conteúdo cacheado
+3. **Cache busting:** Muda a URL (adiciona versão ou hash)
+
+```html
+<!-- Exemplo de cache busting -->
+<link rel="stylesheet" href="/styles.css?v=1.2.3">
+<script src="/app.js?hash=abc123"></script>
+<img src="/logo.png?v=20250119">
+```
+
+A maioria das ferramentas de build modernas faz isso automaticamente adicionando hashes de conteúdo nos nomes dos arquivos.
+
+## Arquitetura de CDN em Detalhes
+
+### Localizações Edge
+
+CDNs grandes têm centenas de PoPs pelo mundo. Quando um usuário faz uma requisição, o DNS direciona pro edge mais próximo.
+
+```
+Requisição DNS do usuário: cdn.exemplo.com
+↓
+DNS da CDN (anycast) roteia pro PoP mais próximo
+↓
+Servidor edge na cidade do usuário serve o conteúdo
+```
+
+### Origin Shield
+
+Algumas CDNs oferecem um "origin shield" - uma camada intermediária que protege seu servidor de origem.
+
+```
+Sem shield:
+Edge A (cache miss) → Origem
+Edge B (cache miss) → Origem
+Edge C (cache miss) → Origem
+(3 requisições pra origem)
+
+Com shield:
+Edge A (cache miss) → Shield → Origem
+Edge B (cache miss) → Shield (já cacheado)
+Edge C (cache miss) → Shield (já cacheado)
+(1 requisição pra origem)
+```
+
+Isso é crucial pra proteger sua origem durante picos de tráfego.
+
+## Provedores de CDN Populares
+
+### Cloudflare
+- Tier gratuito enorme
+- Proteção DDoS inclusa
+- Workers (edge computing)
+- Setup fácil com DNS
+
+### AWS CloudFront
+- Integração profunda com AWS
+- Lambda@Edge pra edge computing
+- Paga pelo uso
+- Bom pra arquiteturas pesadas em AWS
+
+### Fastly
+- Purge em tempo real (invalidação instantânea)
+- VCL pra configuração avançada
+- Ótimo pra conteúdo dinâmico
+- Usado por GitHub, Stripe, etc.
+
+### Outros
+- Akamai (enterprise, rede gigante)
+- Azure CDN
+- Google Cloud CDN
+- Bunny CDN (mais barato)
+
+## CDN pra APIs?
+
+Sim, você pode usar CDNs pra APIs! Mas precisa ter cuidado.
+
+```python
+# Bom: Resposta de API cacheável
+@app.route('/api/produtos')
+def get_produtos():
+    produtos = buscar_produtos()  # Igual pra todos os usuários
+    response = jsonify(produtos)
+    response.headers['Cache-Control'] = 'public, max-age=300'  # 5 min
+    return response
+
+# Ruim: Específico do usuário, não pode cachear
+@app.route('/api/usuario/perfil')
+def get_perfil():
+    usuario = get_usuario_atual()  # Diferente pra cada usuário
+    return jsonify(usuario.perfil)
+    # Não cacheia isso na CDN!
+```
+
+Pra APIs, considere:
+- **Header Vary:** Cacheia versões diferentes baseado em headers
+- **TTL curto:** 1-5 minutos pra dados que mudam frequentemente
+- **Stale-while-revalidate:** Serve conteúdo antigo enquanto busca o novo
+
+## Edge Computing
+
+CDNs modernas conseguem rodar código no edge, não só cachear conteúdo. Isso é um game changer.
+
+```javascript
+// Exemplo de Cloudflare Worker
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request))
+})
+
+async function handleRequest(request) {
+  // Roda esse código no edge, perto do usuário
+  const country = request.cf.country
+
+  if (country === 'BR') {
+    return Response.redirect('https://br.exemplo.com')
+  }
+
+  // Busca da origem
+  return fetch(request)
+}
+```
+
+Casos de uso pra edge computing:
+- Testes A/B
+- Redirecionamentos por geolocalização
+- Verificações de autenticação
+- Transformação de request/response
+- Detecção de bots
+
+## Armadilhas de CDN
+
+### Cache Poisoning
+Se sua origem retorna um erro e a CDN cacheia ele, todos os usuários veem o erro. Sempre configure:
+- Não cachear respostas de erro
+- Definir TTL apropriado pra diferentes status codes
+
+### Surpresas de Custo
+CDNs cobram por bandwidth. Um post viral ou ataque DDoS pode gerar contas enormes. Configure:
+- Alertas de orçamento
+- Rate limiting
+- Proteção DDoS
+
+### Problemas de CORS
+CDN pode complicar CORS. Garanta que sua origem define headers corretos:
+```http
+Access-Control-Allow-Origin: https://exemplo.com
+Access-Control-Allow-Methods: GET, POST
+```
+
+### Problemas de Cache Key
+Por padrão, CDNs cacheiam baseado na URL. Se você tem query params que não afetam o conteúdo, configure a CDN pra ignorar eles.
+
+```
+/api/produtos?utm_source=twitter  # Deveria ser o mesmo cache
+/api/produtos?utm_source=facebook # que esse
+```
+
+## Configurando uma CDN (Exemplo Cloudflare)
+
+1. **Cadastre-se** em cloudflare.com
+2. **Adicione seu site** e atualize os nameservers
+3. **Configure regras de cache:**
+
+```
+# Exemplo de Page Rules
+*.exemplo.com/static/*
+  Cache Level: Cache Everything
+  Edge Cache TTL: 1 month
+
+*.exemplo.com/api/*
+  Cache Level: Bypass
+
+exemplo.com/*
+  Cache Level: Standard
+```
+
+4. **Ative features:**
+- Auto Minify (JS, CSS, HTML)
+- Compressão Brotli
+- HTTP/2 & HTTP/3
+- Always HTTPS
+
+## Quando NÃO Usar CDN
+
+- **Ambiente de desenvolvimento:** Você quer ver mudanças imediatamente
+- **Conteúdo altamente personalizado:** Cada usuário vê conteúdo diferente
+- **Aplicações em tempo real:** Conexões WebSocket, dados ao vivo
+- **Audiência pequena e local:** O overhead da CDN não vale a pena
+- **Dados sensíveis:** Algumas regulamentações exigem localidade dos dados
+
+---
+
+CDNs são uma daquelas coisas que parecem mágica até você entender como funcionam. São basicamente "só cache" mas em escala global, com roteamento inteligente e capacidades de edge computing.
+
+Pra maioria das aplicações web, adicionar uma CDN é uma das melhorias de performance de maior impacto e menor esforço que você pode fazer. É literalmente colocar seu conteúdo mais perto dos seus usuários.
+
+Dúvidas sobre implementar uma CDN? Manda nos comentários!
+
+Até a próxima!

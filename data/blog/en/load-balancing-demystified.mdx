@@ -1,0 +1,300 @@
+---
+title: 'Load Balancing Demystified'
+date: '2025-01-17'
+language: en
+tags: ['system-design', 'architecture', 'scalability', 'infrastructure']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Ever wondered how big platforms handle millions of requests without crashing? The secret often lies in load balancing. I will break down this fundamental concept and explore the strategies that keep systems running smoothly.'
+images: ['/static/images/load-balancing.png']
+---
+
+Ever stopped to think about how big platforms handle millions of requests without crashing? Like, how does Netflix serve content to 200 million users at the same time? Or how does your bank process thousands of transactions per second during peak hours without breaking a sweat?
+
+Part of the secret usually comes down to one fundamental piece of infrastructure: **load balancing**.
+
+Let's break down how this works in practice and what strategies you can use to distribute traffic efficiently in your systems.
+
+## What is Load Balancing anyway?
+
+I'll start with a simple analogy. Imagine a supermarket with only one cashier. During rush hour, the line grows endlessly, customers get pissed off, and some just leave without buying anything. Now imagine the same supermarket with ten cashiers and someone at the entrance directing customers to the shortest line.
+
+That's basically what a load balancer does for your servers.
+
+A **load balancer** is a component that sits between clients and your servers, distributing incoming requests across multiple backend instances. Instead of one server handling everything alone (and eventually dying), the work is distributed, and each server takes care of a portion of the traffic.
+
+```
+                    ┌─────────────┐
+                    │   Server 1  │
+┌─────────┐        ┌┴─────────────┴┐
+│ Clients │───────▶│ Load Balancer │───────▶│   Server 2  │
+└─────────┘        └┬─────────────┬┘
+                    │   Server 3  │
+                    └─────────────┘
+```
+
+## Why do you need this?
+
+Well, let me list the main reasons, but the truth is if you're thinking about scaling your application, you WILL need to understand this.
+
+### 1. High Availability
+
+You know when you have a single server and it goes down? Your entire app goes with it. Game over. With load balancing, if one server fails, the load balancer simply redirects traffic to the servers that are working. Your users don't even notice there was a problem.
+
+### 2. Scalability
+
+As your application grows, you just add more servers behind the load balancer. This **horizontal scaling** is usually cheaper and much more flexible than trying to upgrade to a monster server (vertical scaling).
+
+### 3. Performance
+
+By distributing requests, no single server becomes a bottleneck. Response times stay consistent even when you're swamped with traffic.
+
+### 4. Flexibility
+
+Need to do maintenance? No problem. You take a server out of the pool, do what you need to do, and bring it back. All without taking down the app for your users.
+
+## How Does the Load Balancer Decide?
+
+This is where things get interesting. How the hell does the load balancer decide which server should get each request? There are several strategies, each with its pros and cons. Let me show you the main ones:
+
+### Round Robin
+
+The simplest of them all. Requests are distributed sequentially, like a "take turns" system.
+
+```
+Request 1 → Server A
+Request 2 → Server B
+Request 3 → Server C
+Request 4 → Server A (back to the start)
+...
+```
+
+**The good:** Super simple, fair distribution, zero configuration needed.
+
+**The bad:** Doesn't account for whether one server is weaker than another. If Server A is running on a crappy machine and the others are powerful, it'll still get the same number of requests.
+
+**When to use:** When all your servers are pretty much identical.
+
+### Weighted Round Robin
+
+It's Round Robin on steroids. You assign weights to servers based on their capacity.
+
+```
+Server A (weight: 3) → receives 3 requests
+Server B (weight: 2) → receives 2 requests
+Server C (weight: 1) → receives 1 request
+...then repeats the cycle
+```
+
+**The good:** Respects the differences in server capacity.
+
+**The bad:** Weights are fixed. Doesn't adapt to real-time load.
+
+**When to use:** When you have servers of different sizes in the pool.
+
+### Least Connections
+
+This one sends the request to the server with the fewest active connections at the moment.
+
+```
+Server A: 10 connections
+Server B: 5 connections   ← next request comes here
+Server C: 8 connections
+```
+
+**The good:** Adapts to real server load in real-time. Great for longer-lasting connections.
+
+**The bad:** A bit more overhead to keep tracking connections.
+
+**When to use:** Applications where requests have highly variable processing times (like WebSockets or heavy database queries).
+
+### Weighted Least Connections
+
+Combines least connections with server weights. The request goes to the server with the best ratio of connections to weight.
+
+```
+Server A: 10 connections, weight 5 → ratio: 2.0
+Server B: 5 connections, weight 2  → ratio: 2.5
+Server C: 3 connections, weight 2  → ratio: 1.5 ← this one wins
+```
+
+**When to use:** When you have a mix of different servers AND varied connection patterns.
+
+### IP Hash
+
+Uses the client's IP to determine which server handles the request. Same client, same server. Always.
+
+```python
+server_index = hash(client_ip) % number_of_servers
+```
+
+**The good:** Maintains user session without needing to store state on the load balancer.
+
+**The bad:** If you have many clients coming from the same IP (like an entire company behind NAT), distribution gets messed up.
+
+**When to use:** Applications that need session stickiness but you don't want/can't use distributed session storage.
+
+### Least Response Time
+
+Sends to the server that responds fastest AND has the fewest active connections.
+
+**The good:** Optimizes for user experience.
+
+**The bad:** Needs active monitoring, more complex to implement.
+
+**When to use:** Applications where performance is critical and you can't mess around with response times.
+
+## Layer 4 vs Layer 7: which one to use?
+
+There's an important difference here that many people don't know about.
+
+### Layer 4 (Transport Layer)
+
+Operates at the TCP/UDP level. Just looks at IP and port, doesn't even open the packet to see what's inside.
+
+**Characteristics:**
+- Fast as hell (practically zero processing)
+- Can't see HTTP headers, cookies, URLs, nothing like that
+- Good for simple TCP-based services
+
+### Layer 7 (Application Layer)
+
+Operates at the HTTP level. Can open and read everything: headers, cookies, URLs, even the request body.
+
+**Characteristics:**
+- Can route based on URL path (`/api` goes to API servers, `/static` goes to CDN)
+- Can mess with headers
+- Does SSL termination
+- Uses more resources, but MUCH more flexible
+
+```
+/api/*      → API Server Pool
+/images/*   → Static Content Servers
+/websocket  → WebSocket Servers
+/*          → Web Application Servers
+```
+
+Bottom line: Layer 4 is fast and dumb. Layer 7 is smart but uses more CPU. Choose based on your needs.
+
+## Load Balancing in the Cloud
+
+Modern cloud providers offer managed load balancing services that handle most of the complexity for you.
+
+### AWS
+
+- **Application Load Balancer (ALB):** Layer 7, ideal for HTTP/HTTPS traffic
+- **Network Load Balancer (NLB):** Layer 4, ultra-low latency, handles millions of requests per second
+- **Classic Load Balancer:** Legacy option, supports both Layer 4 and 7
+
+### Google Cloud
+
+- **HTTP(S) Load Balancing:** Global Layer 7 load balancing
+- **TCP/UDP Load Balancing:** Regional Layer 4
+
+### Azure
+
+- **Azure Load Balancer:** Layer 4
+- **Application Gateway:** Layer 7 with WAF capabilities
+
+## Health Checks (Super Important!)
+
+A load balancer is useless if it doesn't know which servers are actually working. Health checks are like a periodic "ping" to the servers to see if everything's okay.
+
+```yaml
+# Example health check configuration
+health_check:
+  protocol: HTTP
+  path: /health
+  interval: 30s          # test every 30 seconds
+  timeout: 5s            # if no response in 5s, it failed
+  healthy_threshold: 2   # needs to pass 2 times in a row to come back
+  unhealthy_threshold: 3 # 3 consecutive failures = you're out
+```
+
+A typical health check endpoint would be something like:
+
+```python
+@app.route('/health')
+def health_check():
+    # Check if database is responding
+    # Check if cache is ok
+    # Check critical external dependencies
+    return {'status': 'healthy'}, 200
+```
+
+If a server fails multiple times in a row, the load balancer takes it out of the pool. When it starts passing checks again, it's back in the game.
+
+## Classic Mistakes (don't be that person)
+
+### Session Stickiness Done Wrong
+
+If your app stores session data locally on each server, you WILL need sticky sessions (IP hash or cookie-based). But this can mess up your entire load distribution.
+
+Golden tip: use Redis or something similar to store sessions. Then any server can handle any user.
+
+### Forgetting the Load Balancer Can Also Fail
+
+Congrats, you removed the single point of failure from your servers... and put it on the load balancer. In production, you NEED redundant load balancers (active-passive or active-active).
+
+### Killing Servers Brutally
+
+Going to do maintenance? Don't just kill the server. Use connection draining to let ongoing requests finish while preventing new ones from coming in. Your users will thank you.
+
+### Blindly Trusting Health Checks
+
+A server can pass health checks and still be performing horribly. Combine checks with real monitoring (metrics, logs, etc.) to get the full picture.
+
+## Hands-On: NGINX as a Load Balancer
+
+Let me show you a simple but functional NGINX config for load balancing:
+
+```nginx
+upstream backend {
+    least_conn;  # using least connections
+    server backend1.example.com:8080 weight=3;
+    server backend2.example.com:8080 weight=2;
+    server backend3.example.com:8080 weight=1;
+}
+
+server {
+    listen 80;
+
+    location / {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location /health {
+        return 200 'OK';
+    }
+}
+```
+
+What this config does:
+- Uses the least connections algorithm
+- Gives different weights to servers (backend1 is the strongest)
+- Forwards client info to the backend servers
+- Has a health check endpoint
+
+Simple as that. You can test this locally and see it working in minutes.
+
+## When NOT to Use Load Balancing
+
+Not everything needs load balancing. Seriously.
+
+- **One server is enough:** If your traffic is small, a load balancer just adds complexity you don't need.
+- **App wasn't built for it:** Some legacy apps simply don't work distributed. It sucks, but it happens.
+- **Budget constraints:** Managed load balancers cost money. Sometimes an optimized server does the job.
+
+The rule is: don't overcomplicate if you don't need to. But when you do need it, at least now you know how it works.
+
+---
+
+Load balancing is one of those concepts that seems like a seven-headed beast at first, but once you get it, it makes total sense. It's literally the foundation for building systems that can scale without crashing.
+
+In the next articles of this series, I'll talk about CDNs, caching strategies, and how all this fits together to create systems that actually scale.
+
+Found this useful? Got questions about implementing this in your projects? Drop them in the comments!
+
+Until next time!

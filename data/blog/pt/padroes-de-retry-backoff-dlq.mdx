@@ -1,0 +1,289 @@
+---
+title: 'Padrões de Retry, Backoff e Dead Letter Queues'
+date: '2025-01-26'
+language: pt
+tags: ['system-design', 'fault-tolerance', 'resilience', 'distributed-systems']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Redes falham. Serviços caem. Timeouts acontecem. Padrões de retry, backoff exponencial e dead letter queues são seu kit pra lidar com a realidade nada bonita dos sistemas distribuídos.'
+images: ['/static/images/retry-patterns.png']
+---
+
+Uma verdade universal sobre sistemas distribuídos: coisas falham. Redes perdem pacotes, serviços caem, bancos de dados dão timeout. A pergunta não é SE falhas acontecem, mas COMO seu sistema responde.
+
+Bora falar sobre retries, backoff, e o que acontece quando nem os retries resolvem.
+
+## O Retry Ingênuo
+
+```python
+# NÃO faça isso
+def call_service():
+    while True:
+        try:
+            return service.call()
+        except Exception:
+            pass  # Tenta de novo imediatamente
+```
+
+Isso cria uma "tempestade de retries" - milhares de instâncias martelando um serviço que já tá sofrendo, piorando tudo.
+
+## Estratégias de Retry
+
+### Intervalo Fixo
+
+Espera o mesmo tempo entre cada retry.
+
+```python
+def retry_fixed(func, max_retries=3, delay=1.0):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(delay)  # Sempre 1 segundo
+```
+
+```
+Tentativa 1 → falha → espera 1s
+Tentativa 2 → falha → espera 1s
+Tentativa 3 → falha → desiste
+```
+
+Simples mas ainda martela o serviço em intervalos regulares.
+
+### Backoff Exponencial
+
+Cada retry espera exponencialmente mais.
+
+```python
+def retry_exponential(func, max_retries=5, base_delay=1.0):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
+```
+
+```
+Tentativa 1 → falha → espera 1s
+Tentativa 2 → falha → espera 2s
+Tentativa 3 → falha → espera 4s
+Tentativa 4 → falha → espera 8s
+Tentativa 5 → falha → desiste
+```
+
+Melhor! Dá mais tempo pro serviço se recuperar.
+
+### Backoff Exponencial + Jitter
+
+O problema do backoff exponencial puro: se 1000 clientes falham ao mesmo tempo, todos fazem retry nos mesmos intervalos, criando uma manada sincronizada.
+
+Jitter adiciona aleatoriedade.
+
+```python
+import random
+
+def retry_with_jitter(func, max_retries=5, base_delay=1.0):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            delay = base_delay * (2 ** attempt)
+            jitter = random.uniform(0, delay)  # Full jitter
+            time.sleep(jitter)
+```
+
+Tipos de jitter:
+```python
+# Full jitter (mais comum)
+delay = random.uniform(0, base_delay * (2 ** attempt))
+
+# Equal jitter
+half = (base_delay * (2 ** attempt)) / 2
+delay = half + random.uniform(0, half)
+
+# Decorrelated jitter
+delay = min(max_delay, random.uniform(base_delay, last_delay * 3))
+```
+
+## O Que Tentar de Novo (e o Que Não)
+
+### Faça retry nessas (falhas transientes):
+- Timeouts de rede
+- HTTP 503 Service Unavailable
+- HTTP 429 Too Many Requests
+- Conexão recusada
+- Pool de conexões do banco esgotado
+
+### NÃO faça retry nessas (falhas permanentes):
+- HTTP 400 Bad Request
+- HTTP 401 Unauthorized
+- HTTP 404 Not Found
+- Erros de validação
+- Erros de lógica de negócio
+
+```python
+def should_retry(exception):
+    if isinstance(exception, requests.Timeout):
+        return True
+    if isinstance(exception, requests.HTTPError):
+        return exception.response.status_code in [429, 500, 502, 503, 504]
+    if isinstance(exception, ConnectionError):
+        return True
+    return False
+```
+
+## Budget de Retry
+
+Não faça retry pra sempre. Defina limites:
+
+```python
+class RetryBudget:
+    def __init__(self, max_retries_per_minute=100):
+        self.max_retries = max_retries_per_minute
+        self.retry_count = 0
+        self.window_start = time.time()
+
+    def can_retry(self):
+        now = time.time()
+        if now - self.window_start > 60:
+            self.retry_count = 0
+            self.window_start = now
+
+        if self.retry_count >= self.max_retries:
+            return False
+
+        self.retry_count += 1
+        return True
+```
+
+## Dead Letter Queues (DLQ)
+
+Quando os retries se esgotam e você não consegue processar uma mensagem, ela vai pra DLQ - uma área de espera pra mensagens com falha.
+
+```
+Fila Principal → Consumer → Processa
+                    ↓ (falha depois de N retries)
+             Dead Letter Queue
+                    ↓
+             • Investigação manual
+             • Reprocessamento automático
+             • Alertas
+```
+
+### Implementação
+
+```python
+def process_message(message):
+    retry_count = message.headers.get('retry_count', 0)
+
+    try:
+        business_logic(message.body)
+        message.ack()
+    except TransientError:
+        if retry_count < MAX_RETRIES:
+            message.headers['retry_count'] = retry_count + 1
+            delay = calculate_backoff(retry_count)
+            queue.publish(message, delay=delay)
+        else:
+            dlq.publish(message, metadata={
+                'original_queue': 'orders',
+                'error': str(e),
+                'failed_at': datetime.now().isoformat(),
+                'retry_count': retry_count
+            })
+        message.ack()
+    except PermanentError:
+        # Não tenta de novo, vai direto pra DLQ
+        dlq.publish(message, metadata={'error': str(e)})
+        message.ack()
+```
+
+### Boas Práticas de DLQ
+
+1. **Inclua metadata:** Fila original, mensagem de erro, timestamp, número de retries
+2. **Configure alertas:** DLQ nunca deve encher silenciosamente
+3. **Construa ferramenta de reprocessamento:** Jeito fácil de empurrar mensagens de volta pra fila principal
+4. **Revise regularmente:** Mensagens na DLQ revelam problemas do sistema
+
+## Estratégias de Timeout
+
+Retries sem timeouts são perigosos:
+
+```python
+def call_with_timeout(func, timeout=5.0):
+    try:
+        return func(timeout=timeout)
+    except TimeoutError:
+        # Agora faz retry
+        pass
+```
+
+### Timeouts em Cascata
+
+Numa cadeia de serviços, timeouts precisam cascatear:
+
+```
+Cliente (timeout: 10s)
+  → Serviço A (timeout: 8s)
+    → Serviço B (timeout: 5s)
+      → Serviço C (timeout: 3s)
+```
+
+Cada serviço precisa ter um timeout menor que quem chamou ele.
+
+## Chaves de Idempotência
+
+Se você faz retry de uma requisição, como garante que ela não é processada duas vezes?
+
+```python
+def create_payment(amount, idempotency_key):
+    # Verifica se já foi processado
+    existing = db.get_payment_by_key(idempotency_key)
+    if existing:
+        return existing  # Retorna mesmo resultado
+
+    # Processa novo pagamento
+    payment = process_payment(amount)
+    payment.idempotency_key = idempotency_key
+    db.save(payment)
+    return payment
+```
+
+```http
+POST /api/payments
+Idempotency-Key: unique-uuid-here
+Content-Type: application/json
+
+{"amount": 99.99}
+```
+
+## Juntando Tudo
+
+```python
+from tenacity import retry, stop_after_attempt, wait_exponential_jitter
+
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential_jitter(initial=1, max=60, jitter=5),
+    retry=retry_if_exception_type(TransientError)
+)
+def reliable_call():
+    return external_service.call()
+```
+
+---
+
+A realidade de sistemas distribuídos é bagunçada. Retries com backoff exponencial e jitter lidam com falhas transientes de forma graciosa. Dead letter queues capturam o que retries não conseguem resolver. Juntos, eles tornam seu sistema resiliente sem esconder problemas.
+
+Comece com backoff exponencial + jitter pra todas as chamadas externas. Adicione DLQs pro processamento assíncrono. Você vai dormir muito melhor à noite.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

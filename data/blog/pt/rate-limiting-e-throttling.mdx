@@ -1,0 +1,358 @@
+---
+title: 'Rate Limiting e Throttling'
+date: '2025-01-21'
+language: pt
+tags: ['system-design', 'api', 'security', 'scalability']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Sua API tá sendo bombardeada. Pode ser um bug, um ataque DDoS, ou talvez você acabou de ser destaque no Hacker News. Rate limiting é como você protege seu sistema de ser sobrecarregado.'
+images: ['/static/images/rate-limiting.png']
+---
+
+Imagina isso: sua startup acabou de ser destaque no Hacker News. Ótimo pra visibilidade, péssimo pros seus servidores. De repente, você tá recebendo 100x o tráfego normal, seu banco de dados tá derretendo, e clientes pagantes não conseguem usar o serviço.
+
+É aqui que o rate limiting salva o dia.
+
+## O Que é Rate Limiting?
+
+Rate limiting é controlar quantas requisições um cliente pode fazer num período de tempo. É tipo um segurança na porta da balada - só um certo número de pessoas pode entrar por hora.
+
+```
+Sem rate limiting:
+Cliente → API → Banco de Dados (sobrecarregado) → 💀
+
+Com rate limiting:
+Cliente → Rate Limiter → API → Banco de Dados (feliz)
+            ↓
+            "Muitas requisições, vai devagar!"
+```
+
+## Por que Rate Limit?
+
+1. **Proteger contra ataques DDoS:** Tráfego malicioso não consegue sobrecarregar seu sistema
+2. **Prevenir abuso:** Um ator mal intencionado não pode estragar pra todo mundo
+3. **Garantir uso justo:** Todos os usuários recebem sua parte dos recursos
+4. **Controlar custos:** Contas de cloud não explodem inesperadamente
+5. **Manter SLAs:** Performance garantida pra clientes pagantes
+
+## Algoritmos de Rate Limiting
+
+### 1. Fixed Window (Janela Fixa)
+
+A abordagem mais simples. Conta requisições em janelas de tempo fixas.
+
+```python
+def is_allowed(user_id):
+    current_window = int(time.time() / 60)  # Janelas de 1 minuto
+    key = f"rate:{user_id}:{current_window}"
+
+    count = redis.incr(key)
+    if count == 1:
+        redis.expire(key, 60)  # Expira depois da janela
+
+    return count <= 100  # 100 requisições por minuto
+```
+
+**Problema:** Burst nas bordas da janela. Se o limite é 100/min, usuário pode fazer 100 requisições às 0:59 e 100 às 1:00 = 200 em 2 segundos.
+
+### 2. Sliding Window Log (Log de Janela Deslizante)
+
+Rastreia timestamps de todas as requisições.
+
+```python
+def is_allowed(user_id):
+    now = time.time()
+    window_start = now - 60  # Janela de 1 minuto
+
+    key = f"rate:{user_id}"
+
+    # Remove entradas antigas
+    redis.zremrangebyscore(key, 0, window_start)
+
+    # Conta entradas atuais
+    count = redis.zcard(key)
+
+    if count < 100:
+        # Adiciona requisição atual
+        redis.zadd(key, {str(now): now})
+        redis.expire(key, 60)
+        return True
+
+    return False
+```
+
+**Prós:** Preciso, sem problemas de borda
+**Contras:** Usa muita memória (guarda cada timestamp)
+
+### 3. Sliding Window Counter (Contador de Janela Deslizante)
+
+Abordagem híbrida. Média ponderada da janela atual e anterior.
+
+```python
+def is_allowed(user_id):
+    now = time.time()
+    current_window = int(now / 60)
+    previous_window = current_window - 1
+
+    # Quanto avançou na janela atual (0 a 1)
+    window_position = (now % 60) / 60
+
+    current_count = redis.get(f"rate:{user_id}:{current_window}") or 0
+    previous_count = redis.get(f"rate:{user_id}:{previous_window}") or 0
+
+    # Contagem ponderada
+    weighted_count = previous_count * (1 - window_position) + current_count
+
+    if weighted_count < 100:
+        redis.incr(f"rate:{user_id}:{current_window}")
+        return True
+
+    return False
+```
+
+**Melhor dos dois mundos:** Pouca memória, razoavelmente preciso.
+
+### 4. Token Bucket (Balde de Tokens)
+
+Tokens são adicionados a uma taxa fixa. Cada requisição consome um token.
+
+```python
+class TokenBucket:
+    def __init__(self, capacity, refill_rate):
+        self.capacity = capacity  # Máximo de tokens
+        self.refill_rate = refill_rate  # Tokens por segundo
+
+    def is_allowed(self, user_id):
+        key = f"bucket:{user_id}"
+
+        # Pega estado atual
+        data = redis.hgetall(key)
+        tokens = float(data.get('tokens', self.capacity))
+        last_update = float(data.get('last_update', time.time()))
+
+        # Reabastece tokens
+        now = time.time()
+        elapsed = now - last_update
+        tokens = min(self.capacity, tokens + elapsed * self.refill_rate)
+
+        if tokens >= 1:
+            tokens -= 1
+            redis.hset(key, mapping={'tokens': tokens, 'last_update': now})
+            return True
+
+        return False
+
+# 100 tokens máximo, reabastece 10 por segundo
+bucket = TokenBucket(capacity=100, refill_rate=10)
+```
+
+**Prós:** Permite bursts controlados, rate limiting suave
+**Contras:** Mais complexo de implementar
+
+### 5. Leaky Bucket (Balde Furado)
+
+Requisições entram numa fila e são processadas a uma taxa fixa.
+
+```
+Requisições → [Fila] → Processamento (taxa fixa)
+                ↓
+         (overflow rejeitado se fila cheia)
+```
+
+Bom pra suavizar tráfego, mas adiciona latência.
+
+## Por que Limitar?
+
+| Identificador | Caso de Uso |
+|---------------|-------------|
+| Endereço IP | Usuários anônimos, proteção DDoS |
+| API Key | Contas de desenvolvedores, planos |
+| User ID | Usuários autenticados |
+| Endpoint | Proteger operações caras |
+| Global | Proteger o sistema inteiro |
+
+Geralmente, você combina vários:
+```python
+def check_rate_limits(request):
+    # Limite global
+    if not global_limiter.is_allowed():
+        return False
+
+    # Limite por IP
+    if not ip_limiter.is_allowed(request.ip):
+        return False
+
+    # Limite por usuário (se autenticado)
+    if request.user:
+        if not user_limiter.is_allowed(request.user.id):
+            return False
+
+    # Limite por endpoint
+    if request.path == "/api/caro":
+        if not expensive_limiter.is_allowed(request.user.id):
+            return False
+
+    return True
+```
+
+## Headers de Resposta
+
+Seja um bom cidadão de API. Informe os clientes sobre seus limites:
+
+```http
+HTTP/1.1 200 OK
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 45
+X-RateLimit-Reset: 1609459200
+```
+
+Quando limitado:
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1609459200
+
+{
+    "error": "Rate limit exceeded",
+    "retry_after": 30
+}
+```
+
+## Throttling vs Rate Limiting
+
+São frequentemente usados como sinônimos, mas tem uma diferença sutil:
+
+- **Rate Limiting:** Limite duro. Depois de X requisições, você é bloqueado.
+- **Throttling:** Desacelera. Depois de X requisições, você é atrasado.
+
+```python
+# Exemplo de throttling
+def handle_request(request):
+    requests_this_minute = get_request_count(request.user)
+
+    if requests_this_minute > 100:
+        # Throttle: adiciona delay ao invés de bloquear
+        delay = (requests_this_minute - 100) * 0.1  # 100ms por requisição extra
+        time.sleep(min(delay, 5))  # Máximo 5 segundos de delay
+
+    return process_request(request)
+```
+
+## Rate Limiting Distribuído
+
+Num sistema distribuído, rate limiting fica complicado. Múltiplos servidores precisam compartilhar estado.
+
+### Centralizado (Redis)
+
+```python
+# Todos os servidores falam com o mesmo Redis
+def is_allowed(user_id):
+    return redis.incr(f"rate:{user_id}") <= 100
+```
+
+**Prós:** Preciso, consistente
+**Contras:** Redis vira ponto único de falha, adiciona latência
+
+### Local + Sync
+
+```python
+# Cada servidor tem contador local, sincroniza periodicamente
+class DistributedRateLimiter:
+    def __init__(self):
+        self.local_count = 0
+        self.global_count = 0
+
+    def is_allowed(self, user_id):
+        self.local_count += 1
+
+        # Sincroniza a cada 10 requisições
+        if self.local_count % 10 == 0:
+            self.global_count = redis.incrby(f"rate:{user_id}", 10)
+
+        estimated_total = self.global_count + (self.local_count % 10)
+        return estimated_total <= 100
+```
+
+**Prós:** Menos chamadas ao Redis, menor latência
+**Contras:** Menos preciso, pode ultrapassar limites levemente
+
+## Rate Limiting em API Gateway
+
+A maioria dos API gateways tem rate limiting embutido:
+
+**Kong:**
+```yaml
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 100
+      policy: redis
+      redis_host: redis
+```
+
+**AWS API Gateway:**
+```json
+{
+  "throttle": {
+    "burstLimit": 100,
+    "rateLimit": 50
+  }
+}
+```
+
+**NGINX:**
+```nginx
+limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+
+server {
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        proxy_pass http://backend;
+    }
+}
+```
+
+## Rate Limits por Plano
+
+Limites diferentes pra usuários diferentes:
+
+```python
+RATE_LIMITS = {
+    'free': {'requests': 100, 'window': 3600},      # 100/hora
+    'basic': {'requests': 1000, 'window': 3600},    # 1000/hora
+    'pro': {'requests': 10000, 'window': 3600},     # 10000/hora
+    'enterprise': {'requests': 100000, 'window': 3600}  # 100000/hora
+}
+
+def get_rate_limit(user):
+    plan = user.subscription_plan
+    return RATE_LIMITS.get(plan, RATE_LIMITS['free'])
+```
+
+## Degradação Gradual
+
+Quando o sistema tá sobrecarregado, limita mais agressivamente:
+
+```python
+def dynamic_rate_limit():
+    system_load = get_cpu_usage()
+
+    if system_load > 90:
+        return 10  # Emergência: 10 req/min
+    elif system_load > 70:
+        return 50  # Estressado: 50 req/min
+    else:
+        return 100  # Normal: 100 req/min
+```
+
+---
+
+Rate limiting pode parecer uma restrição, mas na verdade é sobre justiça e proteção. Garante que seu serviço fique de pé pra todo mundo, mesmo quando as coisas ficam loucas.
+
+Comece simples com fixed window ou token bucket, e vai sofisticando conforme precisar.
+
+Dúvidas sobre rate limiting? Manda nos comentários!
+
+Até a próxima!

@@ -1,0 +1,272 @@
+---
+title: 'Pub/Sub e Message Brokers Explicados'
+date: '2025-01-24'
+language: pt
+tags: ['system-design', 'messaging', 'pubsub', 'architecture']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Pub/Sub é um dos padrões mais poderosos em sistemas distribuídos. Entender garantias de entrega pode te salvar de pesadelos de perda de dados ou processamento duplicado.'
+images: ['/static/images/pubsub.png']
+---
+
+Você já ouviu falar de Pub/Sub, mas o que isso realmente significa? E mais importante, qual é a diferença entre "at-least-once" e "exactly-once"?
+
+Vou destrinchar pra você.
+
+## O Que é Pub/Sub?
+
+Pub/Sub (Publish/Subscribe) é um padrão de mensageria onde:
+- **Publishers** enviam mensagens pra um tópico (não pra receptores específicos)
+- **Subscribers** recebem mensagens de tópicos que interessam
+- **Broker** cuida do roteamento
+
+```
+Publisher A ─┐                    ┌─ Subscriber 1
+             │    ┌─────────┐    │
+Publisher B ─┼───►│  Topic  │────┼─ Subscriber 2
+             │    └─────────┘    │
+Publisher C ─┘                    └─ Subscriber 3
+```
+
+Ponto chave: Publishers e subscribers não se conhecem. O tópico é o contrato.
+
+## Pub/Sub vs Fila de Mensagens
+
+São frequentemente confundidos, mas são diferentes:
+
+**Fila de Mensagens (Ponto-a-Ponto):**
+```
+Producer → Queue → Consumer
+                   (um consumidor recebe a mensagem)
+```
+
+**Pub/Sub (Um-para-Muitos):**
+```
+Publisher → Topic → Todos os Subscribers
+                    (todos os subscribers recebem)
+```
+
+Muitos sistemas suportam ambos:
+- RabbitMQ: Filas + Fanout exchanges pra Pub/Sub
+- Kafka: Consumer groups pra comportamento de fila, múltiplos groups pra Pub/Sub
+- Cloud Pub/Sub: Pub/Sub nativo com subscriptions
+
+## Garantias de Entrega
+
+É aqui que as coisas ficam interessantes (e complicadas).
+
+### At-Most-Once (No Máximo Uma Vez)
+
+Mensagem é entregue zero ou uma vez. Dispara e esquece.
+
+```
+Publisher → Broker → Subscriber
+                  ↓
+            (se falha, mensagem perdida)
+```
+
+**Como funciona:**
+1. Publisher envia mensagem
+2. Broker confirma imediatamente
+3. Broker tenta entregar
+4. Se entrega falha, mensagem é perdida
+
+**Quando usar:**
+- Perda de mensagem é aceitável
+- Performance é crítica
+- Métricas, logs (perder um ponto de dado é ok)
+
+### At-Least-Once (Pelo Menos Uma Vez)
+
+Mensagem é entregue uma ou mais vezes. Entrega garantida, possíveis duplicatas.
+
+```
+Publisher → Broker → Subscriber
+                  ↓
+            (se falha, retry)
+                  ↓
+            (pode entregar duas vezes)
+```
+
+**Como funciona:**
+1. Publisher envia mensagem
+2. Broker armazena mensagem
+3. Broker entrega pro subscriber
+4. Subscriber processa e confirma
+5. Se não confirma, broker tenta de novo
+
+**Quando usar:**
+- Você não pode perder mensagens
+- Você consegue lidar com duplicatas (processamento idempotente)
+- Maioria dos eventos de negócio
+
+### Exactly-Once (Exatamente Uma Vez)
+
+Mensagem é entregue exatamente uma vez. O santo graal.
+
+**A verdade:** Exactly-once verdadeiro é muito difícil (alguns dizem impossível em sistemas distribuídos). O que conseguimos é "efetivamente exactly-once" através de:
+- Processamento idempotente
+- Transactional outbox
+- Deduplicação
+
+**Como o Kafka faz:**
+```
+1. Producer envia com flag idempotente
+2. Broker deduplica por producer ID + sequence number
+3. Consumer commita offset na mesma transação do processamento
+```
+
+## Implementando Idempotência
+
+Já que at-least-once é a escolha prática, você precisa de consumidores idempotentes:
+
+```python
+def process_payment(event):
+    payment_id = event['payment_id']
+
+    # Opção 1: Verifica no banco
+    existing = db.query("SELECT * FROM payments WHERE id = ?", payment_id)
+    if existing:
+        return  # Já processado
+
+    # Opção 2: Usa constraint única
+    try:
+        db.execute("INSERT INTO payments (id, ...) VALUES (?, ...)", payment_id, ...)
+    except UniqueViolation:
+        return  # Já processado
+
+    # Opção 3: Rastreia no Redis
+    if not redis.setnx(f"processed:{payment_id}", "1"):
+        return  # Já processado
+
+    # Processa pagamento
+    charge_customer(event)
+```
+
+## Ordenação de Mensagens
+
+Outro conceito crucial. A ordenação é garantida?
+
+### Ordenação Global
+Todo subscriber vê mensagens na mesma ordem exata.
+- Muito caro
+- Geralmente partição/fila única
+
+### Ordenação por Partição
+Mensagens com a mesma chave são ordenadas.
+- Kafka: Mesma partition key = mesma partição = ordenado
+- Bom o suficiente pra maioria dos casos
+
+```python
+# Pedidos do mesmo cliente estarão em ordem
+kafka.send('orders', key=customer_id, value=order_data)
+```
+
+### Sem Ordenação
+Mensagens podem chegar em qualquer ordem.
+- Mais escalável
+- Mais simples de implementar
+
+## Dead Letter Queues (DLQ)
+
+O que acontece quando uma mensagem não pode ser processada depois de várias tentativas?
+
+```
+Fila Principal → Consumer
+    ↓ (falha 3 vezes)
+Dead Letter Queue → Revisão manual / alertas
+```
+
+```python
+def process_with_dlq(message, max_retries=3):
+    retry_count = message.headers.get('retry_count', 0)
+
+    try:
+        process(message)
+    except Exception as e:
+        if retry_count < max_retries:
+            # Retry com contador incrementado
+            message.headers['retry_count'] = retry_count + 1
+            queue.requeue(message)
+        else:
+            # Envia pra DLQ
+            dlq.send(message, error=str(e))
+```
+
+## Padrão Fan-Out
+
+Um evento dispara múltiplas ações:
+
+```
+OrderCreated
+    ├─► Serviço de Email (envia confirmação)
+    ├─► Serviço de Estoque (reserva itens)
+    ├─► Serviço de Analytics (rastreia métricas)
+    └─► Serviço de Notificação (push notification)
+```
+
+Cada serviço tem sua própria subscription, processa independentemente.
+
+## Backpressure
+
+E se consumidores não conseguem acompanhar?
+
+**Sem backpressure:**
+```
+Producer (1000/s) → Queue → Consumer (100/s)
+                    ↓
+              Fila cresce infinitamente
+                    ↓
+              💀 Sem memória
+```
+
+**Com backpressure:**
+```
+Producer (1000/s) → Queue (cheia) → Producer desacelera
+                    ↓
+              Consumer alcança
+```
+
+Estratégias:
+- **Drop:** Descarta mensagens quando fila está cheia
+- **Block:** Producer espera quando fila está cheia
+- **Sample:** Mantém só a cada N mensagens
+
+## Serviços Pub/Sub na Cloud
+
+### AWS SNS + SQS
+```
+Publisher → SNS Topic → SQS Queue 1 → Consumer 1
+                     → SQS Queue 2 → Consumer 2
+```
+
+### Google Cloud Pub/Sub
+```
+Publisher → Topic → Subscription 1 → Subscriber 1
+                 → Subscription 2 → Subscriber 2
+```
+
+### Azure Service Bus
+```
+Publisher → Topic → Subscription 1 → Consumer 1
+                 → Subscription 2 → Consumer 2
+```
+
+## Boas Práticas
+
+1. **Sempre use at-least-once com idempotência** - Default mais seguro
+2. **Inclua ID da mensagem** - Pra deduplicação
+3. **Configure DLQ** - Não perca mensagens com falha
+4. **Monitore lag** - Consumer ficando pra trás é problema
+5. **Use schema registry** - Formatos de mensagem versionados
+6. **Planeje pra replay** - Você vai precisar reprocessar eventualmente
+
+---
+
+Pub/Sub parece simples na superfície mas tem muita profundidade. O segredo é entender os trade-offs entre garantias de entrega e escolher o que serve pro seu caso de uso.
+
+Na maioria das vezes: at-least-once + consumidores idempotentes = bom o suficiente.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

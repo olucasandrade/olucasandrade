@@ -1,0 +1,530 @@
+---
+title: 'Event Sourcing e CQRS'
+date: '2025-02-01'
+language: pt
+tags: ['system-design', 'event-sourcing', 'cqrs', 'architecture']
+authors: ['lucas-andrade']
+draft: true
+summary: 'E se ao invés de guardar o estado atual dos seus dados, você guardasse cada evento que levou àquele estado? Event sourcing muda completamente a forma de pensar sobre persistência. Combinado com CQRS, vira uma ferramenta absurdamente poderosa.'
+images: ['/static/images/system_design.webp']
+---
+
+Pensa na sua conta bancária. Você não tem apenas um número "saldo = R$5.000". Você tem um **extrato**: uma sequência de depósitos, saques, transferências e pagamentos que, somados, resultam naquele saldo.
+
+Se o banco guardasse só o saldo final e o sistema corrompesse, como saber se o número tá certo? Agora, se tem todo o histórico de transações, é só recalcular.
+
+Isso é **event sourcing**: ao invés de armazenar o estado atual, você armazena a sequência de eventos que produziram aquele estado.
+
+## CRUD Tradicional vs Event Sourcing
+
+### Abordagem CRUD
+
+```
+Operação 1: Criar conta        → {id: 1, saldo: 0}
+Operação 2: Depositar R$1000   → {id: 1, saldo: 1000}
+Operação 3: Sacar R$200        → {id: 1, saldo: 800}
+Operação 4: Transferir R$300   → {id: 1, saldo: 500}
+
+Banco de dados guarda SÓ o estado final: {id: 1, saldo: 500}
+Histórico? Perdido (a menos que você tenha logs separados).
+```
+
+### Abordagem Event Sourcing
+
+```
+Evento 1: ContaCriada          {id: 1, timestamp: "09:00"}
+Evento 2: DepositoRealizado    {id: 1, valor: 1000, timestamp: "09:05"}
+Evento 3: SaqueRealizado       {id: 1, valor: 200, timestamp: "10:30"}
+Evento 4: TransferenciaEnviada {id: 1, valor: 300, dest: 2, timestamp: "11:00"}
+
+Banco de dados guarda TODOS os eventos. Sempre.
+Estado atual = replay de todos os eventos.
+```
+
+A diferença crucial: no CRUD, quando você faz `UPDATE saldo = 500`, o valor anterior desaparece. No event sourcing, nenhum dado é apagado ou modificado. Eventos são **imutáveis** e **append-only**.
+
+## Event Store
+
+O event store é o banco de dados que armazena os eventos. Cada "stream" de eventos representa uma entidade.
+
+```python
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List
+import json
+
+@dataclass
+class Event:
+    stream_id: str
+    event_type: str
+    data: dict
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    version: int = 0
+
+class EventStore:
+    def __init__(self):
+        self.events = []  # Na prática, seria um banco de dados
+
+    def append(self, stream_id: str, event_type: str, data: dict, expected_version: int):
+        # Controle de concorrência otimista
+        current_version = self._get_version(stream_id)
+        if current_version != expected_version:
+            raise ConcurrencyError(
+                f"Esperava versão {expected_version}, encontrou {current_version}"
+            )
+
+        event = Event(
+            stream_id=stream_id,
+            event_type=event_type,
+            data=data,
+            version=current_version + 1
+        )
+        self.events.append(event)
+        return event
+
+    def get_events(self, stream_id: str, from_version: int = 0):
+        return [
+            e for e in self.events
+            if e.stream_id == stream_id and e.version > from_version
+        ]
+
+    def _get_version(self, stream_id: str):
+        stream_events = [e for e in self.events if e.stream_id == stream_id]
+        return stream_events[-1].version if stream_events else 0
+```
+
+## Reconstruindo Estado
+
+Pra saber o estado atual, você "replaya" todos os eventos:
+
+```python
+class BankAccount:
+    def __init__(self):
+        self.id = None
+        self.balance = 0
+        self.is_active = False
+        self.version = 0
+
+    def apply(self, event: Event):
+        handler = {
+            "AccountCreated": self._on_created,
+            "MoneyDeposited": self._on_deposit,
+            "MoneyWithdrawn": self._on_withdrawal,
+            "AccountClosed": self._on_closed,
+        }.get(event.event_type)
+
+        if handler:
+            handler(event.data)
+            self.version = event.version
+
+    def _on_created(self, data):
+        self.id = data["account_id"]
+        self.is_active = True
+
+    def _on_deposit(self, data):
+        self.balance += data["amount"]
+
+    def _on_withdrawal(self, data):
+        self.balance -= data["amount"]
+
+    def _on_closed(self, data):
+        self.is_active = False
+
+    @classmethod
+    def from_events(cls, events: List[Event]):
+        account = cls()
+        for event in events:
+            account.apply(event)
+        return account
+
+# Reconstruindo uma conta a partir dos eventos
+store = EventStore()
+events = store.get_events("account-123")
+account = BankAccount.from_events(events)
+print(f"Saldo atual: R${account.balance}")
+```
+
+## Comandos e Eventos
+
+A distinção é importante:
+
+```
+Comando: Uma INTENÇÃO de fazer algo (pode ser rejeitada)
+  → "Depositar R$1000 na conta 123"
+  → "Sacar R$500 da conta 456"
+
+Evento: Algo que JÁ ACONTECEU (fato imutável)
+  → "DepositoRealizado: R$1000 na conta 123"
+  → "SaqueRealizado: R$500 na conta 456"
+```
+
+```python
+class BankAccountService:
+    def __init__(self, event_store: EventStore):
+        self.store = event_store
+
+    def deposit(self, account_id: str, amount: float):
+        # 1. Carrega estado atual
+        events = self.store.get_events(f"account-{account_id}")
+        account = BankAccount.from_events(events)
+
+        # 2. Valida o comando
+        if not account.is_active:
+            raise ValueError("Conta está fechada")
+        if amount <= 0:
+            raise ValueError("Valor deve ser positivo")
+
+        # 3. Se válido, gera evento
+        self.store.append(
+            stream_id=f"account-{account_id}",
+            event_type="MoneyDeposited",
+            data={"account_id": account_id, "amount": amount},
+            expected_version=account.version
+        )
+
+    def withdraw(self, account_id: str, amount: float):
+        events = self.store.get_events(f"account-{account_id}")
+        account = BankAccount.from_events(events)
+
+        # Validação de negócio
+        if not account.is_active:
+            raise ValueError("Conta está fechada")
+        if account.balance < amount:
+            raise ValueError("Saldo insuficiente")
+
+        self.store.append(
+            stream_id=f"account-{account_id}",
+            event_type="MoneyWithdrawn",
+            data={"account_id": account_id, "amount": amount},
+            expected_version=account.version
+        )
+```
+
+## Snapshots
+
+O problema óbvio: se uma conta tem 10 milhões de eventos, replayar todos toda vez é lento demais.
+
+Solução: **snapshots** periódicos.
+
+```python
+class SnapshotStore:
+    def __init__(self):
+        self.snapshots = {}
+
+    def save(self, stream_id: str, state: dict, version: int):
+        self.snapshots[stream_id] = {
+            "state": state,
+            "version": version
+        }
+
+    def get(self, stream_id: str):
+        return self.snapshots.get(stream_id)
+
+class BankAccountServiceWithSnapshots:
+    def __init__(self, event_store, snapshot_store):
+        self.events = event_store
+        self.snapshots = snapshot_store
+        self.snapshot_interval = 100  # Snapshot a cada 100 eventos
+
+    def load_account(self, account_id: str):
+        stream_id = f"account-{account_id}"
+
+        # 1. Tenta carregar do snapshot
+        snapshot = self.snapshots.get(stream_id)
+
+        if snapshot:
+            # Reconstrói a partir do snapshot
+            account = BankAccount()
+            account.balance = snapshot["state"]["balance"]
+            account.is_active = snapshot["state"]["is_active"]
+            account.version = snapshot["version"]
+
+            # Aplica só eventos DEPOIS do snapshot
+            new_events = self.events.get_events(stream_id, from_version=snapshot["version"])
+        else:
+            # Sem snapshot, replaya tudo
+            account = BankAccount()
+            new_events = self.events.get_events(stream_id)
+
+        for event in new_events:
+            account.apply(event)
+
+        # Cria snapshot se necessário
+        if account.version - (snapshot["version"] if snapshot else 0) >= self.snapshot_interval:
+            self.snapshots.save(stream_id, {
+                "balance": account.balance,
+                "is_active": account.is_active
+            }, account.version)
+
+        return account
+```
+
+```
+Sem snapshot:
+  Replay 10.000 eventos → ~500ms
+
+Com snapshot a cada 100 eventos:
+  Carrega snapshot (versão 9.900) → ~5ms
+  Replay 100 eventos → ~5ms
+  Total: ~10ms (50x mais rápido!)
+```
+
+## CQRS: Separando Leitura e Escrita
+
+**CQRS (Command Query Responsibility Segregation)** separa o modelo de escrita do modelo de leitura. Parece simples, mas muda tudo.
+
+```
+CRUD tradicional:
+  ┌──────────────┐
+  │    Modelo    │
+  │ (lê e escreve)│
+  └──────┬───────┘
+         │
+    ┌────┴─────┐
+    │  Banco   │
+    │  de Dados│
+    └──────────┘
+
+CQRS:
+  ┌──────────┐    ┌──────────┐
+  │ Comando  │    │  Query   │
+  │ (escrita)│    │ (leitura)│
+  └────┬─────┘    └────┬─────┘
+       │               │
+  ┌────┴─────┐    ┌────┴─────┐
+  │ Write DB │    │ Read DB  │
+  │(otimizado│    │(otimizado│
+  │pra escrita)│  │pra leitura)│
+  └──────────┘    └──────────┘
+```
+
+### Por que Separar?
+
+```
+Leitura e escrita têm necessidades DIFERENTES:
+
+Escrita:
+  - Precisa de validação forte
+  - Transações ACID
+  - Modelo normalizado
+  - Consistência é prioridade
+
+Leitura:
+  - Precisa ser rápida
+  - Pode ser desnormalizada
+  - Views materializadas
+  - Otimizada pra queries específicas
+```
+
+### Implementação com Event Sourcing + CQRS
+
+```python
+# Write Side: recebe comandos, gera eventos
+class OrderCommandHandler:
+    def __init__(self, event_store):
+        self.store = event_store
+
+    def create_order(self, user_id, items):
+        order_id = generate_id()
+
+        # Valida
+        if not items:
+            raise ValueError("Pedido precisa ter itens")
+
+        total = sum(item["price"] * item["qty"] for item in items)
+
+        # Gera evento
+        self.store.append(
+            stream_id=f"order-{order_id}",
+            event_type="OrderCreated",
+            data={
+                "order_id": order_id,
+                "user_id": user_id,
+                "items": items,
+                "total": total
+            },
+            expected_version=0
+        )
+        return order_id
+
+# Read Side: consome eventos, mantém views otimizadas
+class OrderReadModel:
+    def __init__(self):
+        self.orders = {}  # View desnormalizada
+        self.user_orders = {}  # Índice por usuário
+        self.stats = {"total_revenue": 0, "total_orders": 0}
+
+    def handle_event(self, event):
+        if event.event_type == "OrderCreated":
+            data = event.data
+            # View principal
+            self.orders[data["order_id"]] = {
+                "id": data["order_id"],
+                "user_id": data["user_id"],
+                "items": data["items"],
+                "total": data["total"],
+                "status": "created",
+                "created_at": event.timestamp
+            }
+            # Índice por usuário
+            if data["user_id"] not in self.user_orders:
+                self.user_orders[data["user_id"]] = []
+            self.user_orders[data["user_id"]].append(data["order_id"])
+
+            # Estatísticas
+            self.stats["total_revenue"] += data["total"]
+            self.stats["total_orders"] += 1
+
+        elif event.event_type == "OrderShipped":
+            self.orders[event.data["order_id"]]["status"] = "shipped"
+
+    # Queries otimizadas
+    def get_order(self, order_id):
+        return self.orders.get(order_id)
+
+    def get_user_orders(self, user_id):
+        order_ids = self.user_orders.get(user_id, [])
+        return [self.orders[oid] for oid in order_ids]
+
+    def get_dashboard_stats(self):
+        return self.stats  # Pré-calculado, instantâneo!
+```
+
+## Projeções
+
+Projeções são os read models do CQRS. Você pode ter múltiplas projeções dos mesmos eventos, cada uma otimizada pra um caso de uso diferente.
+
+```python
+# Mesmos eventos, projeções diferentes
+
+class DashboardProjection:
+    """Projeção pra dashboard administrativo"""
+    def handle(self, event):
+        if event.event_type == "OrderCreated":
+            self.update_daily_revenue(event)
+            self.update_top_products(event)
+
+class SearchProjection:
+    """Projeção pra busca de pedidos (Elasticsearch)"""
+    def handle(self, event):
+        if event.event_type == "OrderCreated":
+            self.index_order(event)
+        elif event.event_type == "OrderShipped":
+            self.update_order_status(event)
+
+class NotificationProjection:
+    """Projeção pra disparar notificações"""
+    def handle(self, event):
+        if event.event_type == "OrderShipped":
+            self.send_shipping_notification(event)
+
+class AnalyticsProjection:
+    """Projeção pra analytics (data warehouse)"""
+    def handle(self, event):
+        self.push_to_bigquery(event)
+
+# Todos consomem do mesmo event store
+event_bus.subscribe(dashboard_projection.handle)
+event_bus.subscribe(search_projection.handle)
+event_bus.subscribe(notification_projection.handle)
+event_bus.subscribe(analytics_projection.handle)
+```
+
+A beleza disso: precisa de uma nova view dos dados? Cria uma nova projeção e "replaya" todos os eventos históricos. Sem precisar mudar nada no lado de escrita.
+
+## Prós e Contras
+
+### Prós do Event Sourcing
+
+```
+✓ Auditoria completa (quem fez o quê, quando)
+✓ Debug temporal (reconstrói estado em qualquer ponto no tempo)
+✓ Novas projeções a qualquer momento (replay de eventos)
+✓ Integração natural com sistemas event-driven
+✓ Sem perda de informação (eventos são imutáveis)
+```
+
+### Contras do Event Sourcing
+
+```
+✗ Complexidade muito maior que CRUD
+✗ Eventual consistency entre write e read (delay na projeção)
+✗ Event store pode ficar enorme
+✗ Versionamento de eventos é complicado
+  (o que acontece quando o formato de um evento muda?)
+✗ Queries ad hoc são difíceis no event store
+✗ Curva de aprendizado alta pra equipe
+```
+
+### Prós do CQRS
+
+```
+✓ Read e write podem escalar independentemente
+✓ Queries otimizadas (read model desnormalizado)
+✓ Diferentes tecnologias pra cada lado
+  (PostgreSQL pra escrita, Elasticsearch pra leitura)
+✓ Simplifica modelos complexos
+```
+
+### Contras do CQRS
+
+```
+✗ Eventual consistency (leitura pode estar desatualizada)
+✗ Mais infraestrutura pra manter
+✗ Sincronização entre write e read models
+✗ Overkill pra CRUD simples
+```
+
+## Quando Usar vs Quando Não Usar
+
+```
+USE Event Sourcing quando:
+  ✓ Auditoria é requisito legal/regulatório (fintech, saúde)
+  ✓ Precisa reconstruir estado em qualquer ponto no tempo
+  ✓ Domínio naturalmente baseado em eventos (transações, pedidos)
+  ✓ Múltiplos consumidores interessados nos mesmos dados
+
+NÃO use quando:
+  ✗ CRUD simples (blog, catálogo de produtos)
+  ✗ Equipe não tem experiência com o padrão
+  ✗ Forte necessidade de consistência imediata
+  ✗ Dados que precisam ser deletados (GDPR pode complicar)
+
+USE CQRS quando:
+  ✓ Padrões de leitura e escrita muito diferentes
+  ✓ Alto volume de leitura, baixo volume de escrita (ou vice-versa)
+  ✓ Queries complexas que precisam de modelos desnormalizados
+
+NÃO use quando:
+  ✗ CRUD simples
+  ✗ Domínio não tem complexidade que justifique
+  ✗ Eventual consistency não é aceitável
+```
+
+## Tecnologias
+
+```
+Event Store:
+  - EventStoreDB (feito pra isso)
+  - Apache Kafka (como log de eventos)
+  - PostgreSQL (com tabela append-only)
+  - DynamoDB Streams
+
+Frameworks:
+  - Axon Framework (Java)
+  - Marten (C#/.NET)
+  - Eventide (Ruby)
+  - commanded (Elixir)
+```
+
+---
+
+Event sourcing e CQRS são padrões poderosos, mas não são bala de prata. Se o seu sistema é um CRUD que salva e lê dados sem muita complexidade, CRUD tá ótimo. Não complique.
+
+Mas se você tá lidando com domínios complexos, precisa de auditoria completa ou tem padrões de leitura/escrita muito diferentes, esses padrões podem transformar sua arquitetura.
+
+Minha dica: estude, faça um projeto pequeno pra praticar, e só depois aplique em produção. A curva de aprendizado é real.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

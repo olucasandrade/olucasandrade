@@ -1,0 +1,426 @@
+---
+title: 'Consistência de Dados e o Teorema CAP na Prática'
+date: '2025-02-07'
+language: pt
+tags: ['system-design', 'distributed-systems', 'databases', 'consistency']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Você pode ter consistência, disponibilidade e tolerância a partição - só não as três ao mesmo tempo. O teorema CAP é um dos conceitos mais mal entendidos em system design. Vou clarear isso com exemplos reais.'
+images: ['/static/images/system_design.webp']
+---
+
+Já parou pra pensar no que acontece quando dois usuários tentam comprar o último item em estoque exatamente ao mesmo tempo? Um deles tem que perder. Mas como o sistema decide? E se os bancos de dados em servidores diferentes discordarem sobre quantos itens ainda tem?
+
+Bem-vindo ao mundo da consistência de dados em sistemas distribuídos. É bagunçado, é complicado, e o teorema CAP é seu guia por tudo isso.
+
+## O Teorema CAP
+
+Em 2000, Eric Brewer propôs que um sistema distribuído só pode garantir duas de três propriedades:
+
+```
+        Consistência (C)
+           /     \
+          /       \
+         /  escolha \
+        /    duas    \
+       /             \
+Disponibilidade (A) ── Tolerância a
+                       Partição (P)
+```
+
+### Consistência (C)
+
+Toda leitura recebe a escrita mais recente. Todos os nós veem os mesmos dados ao mesmo tempo.
+
+```
+Usuário escreve: saldo = R$100
+
+Nó A: saldo = R$100 ✓
+Nó B: saldo = R$100 ✓
+Nó C: saldo = R$100 ✓
+
+Todo nó concorda. Isso é consistência.
+```
+
+### Disponibilidade (A)
+
+Toda requisição recebe uma resposta (não um erro), mesmo que não tenha os dados mais recentes.
+
+```
+Usuário lê saldo:
+Nó A: "Seu saldo é R$100" ✓ (responde, mesmo se dado pode estar desatualizado)
+
+Nó A NUNCA diz: "Desculpe, não consigo responder agora" ✗
+```
+
+### Tolerância a Partição (P)
+
+O sistema continua operando mesmo quando a comunicação de rede entre nós falha.
+
+```
+Normal:
+Nó A ←──→ Nó B ←──→ Nó C
+
+Partição:
+Nó A ←──→ Nó B    ✗    Nó C
+       (não alcança C)
+```
+
+## Por que Você Não Pode Ter as Três
+
+A questão é: **partições de rede vão acontecer**. Cabos são cortados, switches falham, data centers perdem conectividade. Você não pode evitar P.
+
+Então a escolha real é: **CP ou AP?**
+
+```
+Partição acontece:
+Nó A ←─────── ✗ ────────→ Nó B
+
+CP (Consistência + Tolerância a Partição):
+  Nó A: "Não posso confirmar essa escrita até sincronizar com B"
+  → Recusa requisições até partição resolver (sacrifica Disponibilidade)
+
+AP (Disponibilidade + Tolerância a Partição):
+  Nó A: "Vou aceitar essa escrita e sincronizar depois"
+  → Pode ter dados diferentes de B (sacrifica Consistência)
+```
+
+### Exemplo Real: Transferência Bancária
+
+```
+Alice envia R$50 pro Bob.
+
+Abordagem CP (como bancos tradicionais):
+  1. Trava conta da Alice
+  2. Trava conta do Bob
+  3. Se não alcança outro nó → REJEITA transação
+  4. Ambos concordam → Completa transferência
+  Resultado: Transação pode falhar, mas saldos estão sempre corretos
+
+Abordagem AP (imagina se bancos fizessem isso):
+  1. Aceita transferência da Alice no Nó A
+  2. Aceita visualização do Bob no Nó B
+  3. Nós estão particionados... saldo do Bob mostra valor antigo
+  4. Quando partição resolve, resolve conflitos
+  Resultado: Transação sempre funciona, mas saldos podem estar temporariamente errados
+```
+
+Pra dinheiro? Obviamente você quer CP. Pra curtidas em rede social? AP tá ótimo.
+
+## Consistência Forte vs Eventual
+
+### Consistência Forte
+
+Depois que uma escrita completa, todas as leituras subsequentes vão retornar aquele valor. Ponto.
+
+```python
+# Consistência forte
+def transfer_money(from_account, to_account, amount):
+    with distributed_lock(from_account, to_account):
+        # Todos os nós devem concordar antes de retornar
+        balance = get_balance(from_account)  # Sempre último valor
+
+        if balance < amount:
+            raise InsufficientFunds()
+
+        debit(from_account, amount)
+        credit(to_account, amount)
+        # Ambas escritas confirmadas em todas as réplicas antes de retornar
+```
+
+**Custo:** Latência maior (precisa esperar todos os nós concordarem), menor disponibilidade durante partições.
+
+**Use quando:** Transações financeiras, gerenciamento de estoque, qualquer coisa onde dados desatualizados causam problemas reais.
+
+### Consistência Eventual
+
+Se nenhuma atualização nova for feita, eventualmente todos os nós vão ter os mesmos dados. "Eventualmente" pode ser milissegundos ou segundos.
+
+```python
+# Consistência eventual
+def add_like(post_id, user_id):
+    # Escreve no nó local, replica depois
+    local_db.increment(f"likes:{post_id}")
+    replication_queue.push({
+        "action": "increment_like",
+        "post_id": post_id,
+        "user_id": user_id
+    })
+    # Retorna imediatamente, outros nós vão se atualizar
+
+def get_likes(post_id):
+    # Pode retornar contagem levemente desatualizada
+    return local_db.get(f"likes:{post_id}")
+```
+
+**Custo:** Leituras podem retornar dados desatualizados temporariamente.
+
+**Use quando:** Feeds de redes sociais, contadores de visualizações, recomendações, analytics.
+
+### Espectro de Consistência
+
+Não é só "forte" ou "eventual." Existe um espectro inteiro:
+
+```
+Forte ──────────────────────────────→ Fraca
+
+Linearizável  Sequencial   Causal   Eventual
+    │              │          │         │
+    │              │          │         │
+Todos os nós   Operações   Eventos   Eventualmente
+concordam em   aparecem    relacionados todos os nós
+toda leitura   na mesma    são         concordam
+               ordem       ordenados
+```
+
+## Padrões de Consistência na Prática
+
+### Read-Your-Own-Writes
+
+Depois de escrever, o mesmo usuário sempre vê sua própria escrita. Outros usuários podem ver dados desatualizados.
+
+```python
+def update_profile(user_id, new_name):
+    # Escreve no primário
+    primary_db.update(user_id, {"name": new_name})
+
+    # Define hint na sessão pra ler do primário pra esse usuário
+    session.set("read_from_primary_until", time.time() + 5)
+
+def get_profile(user_id, requesting_user):
+    if requesting_user == user_id and session.get("read_from_primary_until", 0) > time.time():
+        # Lê próprio perfil do primário (garantido estar fresco)
+        return primary_db.get(user_id)
+    else:
+        # Lê da réplica (pode estar levemente desatualizado)
+        return replica_db.get(user_id)
+```
+
+### Leituras Monotônicas
+
+Uma vez que você viu um valor, nunca vai ver um valor mais antigo. Sem voltar atrás.
+
+```python
+class MonotonicReadClient:
+    def __init__(self):
+        self.last_timestamp = {}
+
+    def read(self, key):
+        # Lê de uma réplica que está pelo menos tão fresca quanto nossa última leitura
+        for replica in replicas:
+            value, timestamp = replica.get_with_timestamp(key)
+            if timestamp >= self.last_timestamp.get(key, 0):
+                self.last_timestamp[key] = timestamp
+                return value
+
+        # Cai pro primário se nenhuma réplica está fresca o suficiente
+        return primary.get(key)
+```
+
+### Leituras e Escritas por Quórum
+
+Use a maioria dos nós pra garantir consistência.
+
+```
+N = total de nós = 5
+W = quórum de escrita = 3 (escrita deve ter sucesso em 3 nós)
+R = quórum de leitura = 3 (lê de 3 nós, pega o mais recente)
+
+W + R > N → Garantido ler a escrita mais recente
+3 + 3 > 5 → ✓
+
+         Escrita (W=3)         Leitura (R=3)
+Nó 1: ✓ (valor=42)            ✓ (valor=42)
+Nó 2: ✓ (valor=42)            ✓ (valor=42)
+Nó 3: ✓ (valor=42)            ✗ (não consultado)
+Nó 4: ✗ (ainda não)           ✓ (valor=ANTIGO)
+Nó 5: ✗ (ainda não)           ✗ (não consultado)
+
+Leitura vê valor=42 da maioria → retorna 42 ✓
+```
+
+```python
+# Escrita por quórum
+def quorum_write(key, value, replicas, quorum_size):
+    acks = 0
+    for replica in replicas:
+        try:
+            replica.write(key, value, timestamp=time.time())
+            acks += 1
+        except ConnectionError:
+            continue
+
+    if acks < quorum_size:
+        raise WriteFailedError("Não conseguiu alcançar quórum de escrita")
+
+    return True
+
+# Leitura por quórum
+def quorum_read(key, replicas, quorum_size):
+    responses = []
+    for replica in replicas:
+        try:
+            value, ts = replica.read(key)
+            responses.append((value, ts))
+        except ConnectionError:
+            continue
+
+    if len(responses) < quorum_size:
+        raise ReadFailedError("Não conseguiu alcançar quórum de leitura")
+
+    # Retorna o valor com o timestamp mais recente
+    return max(responses, key=lambda x: x[1])[0]
+```
+
+## Exemplos do Mundo Real
+
+### Amazon DynamoDB
+
+Sistema AP com consistência ajustável.
+
+```python
+import boto3
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('Products')
+
+# Leitura eventualmente consistente (padrão, mais barato, mais rápido)
+response = table.get_item(
+    Key={'product_id': '123'},
+    ConsistentRead=False
+)
+
+# Leitura fortemente consistente (custa 2x, mas garante o mais recente)
+response = table.get_item(
+    Key={'product_id': '123'},
+    ConsistentRead=True
+)
+```
+
+### PostgreSQL com Replicação
+
+Sistema CP por padrão (primário único).
+
+```sql
+-- Escrita vai pro primário
+INSERT INTO orders (id, status) VALUES (1, 'created');
+
+-- Leitura da réplica (pode estar levemente atrasada)
+SELECT * FROM orders WHERE id = 1;
+-- Pode retornar vazio se existe lag de replicação!
+
+-- Leitura do primário (sempre consistente)
+SELECT * FROM orders WHERE id = 1;
+-- Sempre retorna a linha
+```
+
+### Redis Cluster
+
+AP por padrão. Escreve no primário, replicação assíncrona pras réplicas.
+
+```python
+# Escreve no primário
+redis.set("inventory:item-123", 5)
+
+# Se o primário falha antes de replicar...
+# Réplica vira primário com valor antigo
+# Aquela última escrita FOI PERDIDA
+
+# Pra dados críticos, use WAIT
+redis.set("inventory:item-123", 5)
+redis.wait(1, timeout=1000)  # Espera pelo menos 1 réplica confirmar
+```
+
+### MongoDB
+
+Consistência ajustável com write concerns e read preferences.
+
+```javascript
+// Consistência eventual (rápido)
+db.collection('products').find(
+    { category: 'electronics' },
+    { readPreference: 'secondaryPreferred' }
+);
+
+// Consistência forte (mais lento mas garantido)
+db.collection('orders').insertOne(
+    { item: 'laptop', qty: 1 },
+    { writeConcern: { w: 'majority', j: true } }
+);
+```
+
+## Resolução de Conflitos
+
+Quando você escolhe AP, precisa lidar com conflitos quando os nós se reconectam.
+
+### Last Write Wins (LWW)
+
+Simples mas pode perder dados.
+
+```python
+def resolve_conflict(value_a, timestamp_a, value_b, timestamp_b):
+    if timestamp_a > timestamp_b:
+        return value_a
+    return value_b
+```
+
+### Merge
+
+Resolução de conflito específica da aplicação.
+
+```python
+def resolve_shopping_cart(cart_a, cart_b):
+    # União dos dois carrinhos (nenhum item perdido)
+    merged = {}
+    for item, qty in {**cart_a, **cart_b}.items():
+        merged[item] = max(cart_a.get(item, 0), cart_b.get(item, 0))
+    return merged
+```
+
+### CRDTs (Conflict-free Replicated Data Types)
+
+Estruturas de dados que sempre podem ser mescladas sem conflitos.
+
+```python
+# G-Counter: contador que só cresce
+# Cada nó tem seu próprio contador
+class GCounter:
+    def __init__(self, node_id, nodes):
+        self.node_id = node_id
+        self.counters = {n: 0 for n in nodes}
+
+    def increment(self):
+        self.counters[self.node_id] += 1
+
+    def value(self):
+        return sum(self.counters.values())
+
+    def merge(self, other):
+        for node, count in other.counters.items():
+            self.counters[node] = max(self.counters[node], count)
+```
+
+## Como Escolher
+
+```
+Pergunta                                │ Resposta → Direção
+────────────────────────────────────────┼─────────────────────
+Usuários podem ver dados               │ Sim → AP / Eventual
+desatualizados brevemente?             │
+O sistema pode rejeitar escritas?       │ Sim → CP / Forte
+São dados financeiros?                  │ → Consistência forte
+É conteúdo de rede social?             │ → Consistência eventual
+É inventário em tempo real?            │ → Depende (ajustável)
+```
+
+Minha regra geral: **comece com consistência eventual a menos que tenha um motivo específico pra consistência forte.** Consistência forte é cara. A maioria das coisas no seu sistema não precisa disso de verdade.
+
+---
+
+O teorema CAP não é sobre escolher uma tecnologia. É sobre entender os tradeoffs no seu sistema e tomar decisões conscientes sobre consistência pra cada pedaço de dado.
+
+Seus perfis de usuário podem ser eventualmente consistentes. Seu processamento de pagamento precisa de consistência forte. E tá tudo bem. Dados diferentes, requisitos diferentes.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

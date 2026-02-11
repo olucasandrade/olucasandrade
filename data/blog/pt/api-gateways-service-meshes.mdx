@@ -1,0 +1,392 @@
+---
+title: 'API Gateways e Service Meshes: Gerenciando Tráfego em Microserviços'
+date: '2025-02-06'
+language: pt
+tags: ['system-design', 'microservices', 'api', 'infrastructure']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Quando você tem dezenas de microserviços, quem cuida da autenticação? Rate limiting? Roteamento? API gateways e service meshes resolvem esses problemas pra que seus serviços não precisem. Vou te mostrar como.'
+images: ['/static/images/system_design.webp']
+---
+
+Você dividiu seu monolito em microserviços. Parabéns! Agora você tem um monte de problemas novos. Como os clientes conversam com 50 serviços diferentes? Quem cuida da autenticação? E o rate limiting? Como os serviços se encontram?
+
+É aí que API gateways e service meshes entram. Eles resolvem problemas diferentes mas complementares, e entender quando usar cada um é crucial.
+
+## O Problema
+
+Sem um gateway, seus clientes falam diretamente com cada serviço:
+
+```
+App Mobile  ──→ User Service
+            ──→ Order Service
+            ──→ Payment Service
+            ──→ Product Service
+            ──→ Notification Service
+            ──→ ... mais 45 serviços
+```
+
+Isso é um pesadelo. O cliente precisa conhecer cada serviço, lidar com autenticação pra cada um, trabalhar com protocolos diferentes, e gerenciar falhas individualmente.
+
+## API Gateway
+
+Um API gateway é um ponto de entrada único pra todas as requisições dos clientes. Ele fica entre os clientes e seus microserviços.
+
+```
+                        ┌─────────────────┐
+                        │  User Service   │
+                        ├─────────────────┤
+App Mobile ─┐           │  Order Service  │
+Web App    ─┼──→ API   ─┼─────────────────┤
+3rd Party  ─┘   Gateway │ Payment Service │
+                        ├─────────────────┤
+                        │ Product Service │
+                        └─────────────────┘
+```
+
+### O que Ele Faz
+
+**1. Roteamento de Requisições**
+
+Roteia requisições pro serviço certo baseado no path, headers, ou outros critérios.
+
+```yaml
+# Configuração Kong gateway
+services:
+  - name: user-service
+    url: http://users.internal:8080
+    routes:
+      - paths: ["/api/users"]
+
+  - name: order-service
+    url: http://orders.internal:8080
+    routes:
+      - paths: ["/api/orders"]
+
+  - name: product-service
+    url: http://products.internal:8080
+    routes:
+      - paths: ["/api/products"]
+```
+
+**2. Autenticação e Autorização**
+
+Verifica tokens uma vez no gateway ao invés de em cada serviço.
+
+```python
+# Middleware do gateway (pseudocódigo)
+def authenticate_request(request):
+    token = request.headers.get("Authorization")
+
+    if not token:
+        return Response(401, "Token ausente")
+
+    user = verify_jwt(token)
+    if not user:
+        return Response(401, "Token inválido")
+
+    # Adiciona info do usuário nos headers pros serviços downstream
+    request.headers["X-User-Id"] = user.id
+    request.headers["X-User-Role"] = user.role
+
+    return forward_to_service(request)
+```
+
+Agora seus serviços não precisam saber sobre JWT tokens. Eles só leem `X-User-Id` dos headers. Limpo.
+
+**3. Rate Limiting**
+
+```yaml
+# Rate limiting por cliente
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 100
+      hour: 1000
+      policy: redis
+      redis_host: redis.internal
+```
+
+**4. Transformação de Request/Response**
+
+```python
+# Agrega múltiplas chamadas de serviço numa resposta só
+@gateway.route("/api/dashboard")
+def get_dashboard(user_id):
+    # Cliente faz UMA chamada, gateway faz TRÊS
+    user = call_service("user-service", f"/users/{user_id}")
+    orders = call_service("order-service", f"/users/{user_id}/orders?limit=5")
+    notifications = call_service("notification-service", f"/users/{user_id}/unread")
+
+    return {
+        "user": user,
+        "recent_orders": orders,
+        "notifications": notifications
+    }
+```
+
+Isso é o padrão **BFF (Backend for Frontend)**. Gateways diferentes pra clientes diferentes.
+
+**5. Load Balancing**
+
+```
+              ┌──→ Instância do Serviço 1
+Gateway ──────┼──→ Instância do Serviço 2
+              └──→ Instância do Serviço 3
+```
+
+### API Gateways Populares
+
+- **Kong** - open source, construído em NGINX, ecossistema de plugins
+- **AWS API Gateway** - totalmente gerenciado, integra com Lambda
+- **NGINX** - o clássico, super performático
+- **Traefik** - cloud native, ótimo com Docker/K8s
+- **Envoy** - proxy de alta performance (também usado em service meshes)
+
+### Padrões de API Gateway
+
+**Gateway por Tipo de Cliente (BFF):**
+
+```
+App Mobile  ──→ Mobile Gateway  ──→ Serviços
+Web App     ──→ Web Gateway     ──→ Serviços
+3rd Party   ──→ Public Gateway  ──→ Serviços
+```
+
+Cada gateway é otimizado pro seu cliente. Mobile gateway retorna payloads menores, web gateway retorna dados mais ricos.
+
+**Gateway como Agregador:**
+
+```javascript
+// Ao invés do cliente fazer 4 chamadas de API:
+// GET /users/123
+// GET /users/123/orders
+// GET /users/123/recommendations
+// GET /users/123/notifications
+
+// Cliente faz 1 chamada:
+// GET /api/dashboard/123
+
+app.get('/api/dashboard/:userId', async (req, res) => {
+    const [user, orders, recommendations, notifications] = await Promise.all([
+        userService.get(req.params.userId),
+        orderService.getByUser(req.params.userId),
+        recommendationService.get(req.params.userId),
+        notificationService.getUnread(req.params.userId)
+    ]);
+
+    res.json({ user, orders, recommendations, notifications });
+});
+```
+
+## Service Mesh
+
+Um API gateway lida com tráfego norte-sul (cliente pro serviço). Mas e o tráfego leste-oeste (serviço pra serviço)?
+
+```
+Norte-Sul (API Gateway):
+Cliente ──→ Gateway ──→ Serviço
+
+Leste-Oeste (Service Mesh):
+Serviço A ──→ Serviço B ──→ Serviço C
+```
+
+Um service mesh gerencia a comunicação **entre** seus microserviços.
+
+### O Padrão Sidecar
+
+Ao invés de adicionar lógica de rede em cada serviço, você acopla um proxy **sidecar** em cada um.
+
+```
+┌────────────────────────────────┐
+│            Pod                 │
+│  ┌──────────┐  ┌───────────┐  │
+│  │  Seu     │──│  Sidecar  │──│──→ pra outros serviços
+│  │ Serviço  │  │  Proxy    │  │
+│  └──────────┘  └───────────┘  │
+└────────────────────────────────┘
+```
+
+Seu serviço fala com localhost. O sidecar cuida de todo o resto: mTLS, retries, circuit breaking, load balancing, observabilidade.
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│   Serviço A     │         │   Serviço B     │
+│  ┌───┐ ┌─────┐ │  mTLS   │ ┌─────┐ ┌───┐  │
+│  │App│→│Proxy│─┼─────────┼→│Proxy│→│App│  │
+│  └───┘ └─────┘ │         │ └─────┘ └───┘  │
+└─────────────────┘         └─────────────────┘
+     Sidecar                    Sidecar
+```
+
+### O que Service Meshes Oferecem
+
+**1. Mutual TLS (mTLS)**
+
+Toda chamada serviço-pra-serviço é criptografada. Zero mudanças no código.
+
+```yaml
+# Istio: Habilita mTLS pra todos os serviços
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: production
+spec:
+  mtls:
+    mode: STRICT
+```
+
+**2. Gerenciamento de Tráfego**
+
+```yaml
+# Istio: Canary deployment via traffic splitting
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: order-service
+spec:
+  hosts:
+    - order-service
+  http:
+    - route:
+        - destination:
+            host: order-service
+            subset: v1
+          weight: 90
+        - destination:
+            host: order-service
+            subset: v2
+          weight: 10
+```
+
+**3. Observabilidade**
+
+Service mesh te dá distributed tracing, métricas e logging de graça.
+
+```
+Fluxo de requisição rastreado automaticamente:
+Gateway → Serviço A (2ms) → Serviço B (15ms) → Serviço C (3ms) → DB (8ms)
+Total: 28ms
+
+Sem mudanças no código. Os sidecars cuidam disso.
+```
+
+**4. Retries e Circuit Breaking**
+
+```yaml
+# Istio: Retries automáticos
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+spec:
+  http:
+    - retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: 5xx,reset,connect-failure
+```
+
+```yaml
+# Istio: Circuit breaker
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: order-service
+spec:
+  host: order-service
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+```
+
+### Service Meshes Populares
+
+- **Istio** - o mais popular, mais features, baseado em Envoy
+- **Linkerd** - mais leve, mais fácil de operar, proxy em Rust
+- **Consul Connect** - da HashiCorp, bom pra multi-plataforma
+- **AWS App Mesh** - service mesh gerenciado pra AWS
+
+### Arquitetura do Istio
+
+```
+┌─────────────────────────────────────┐
+│           Control Plane             │
+│  ┌──────┐  ┌───────┐  ┌────────┐   │
+│  │Pilot │  │Citadel│  │ Galley │   │
+│  │(config)│(certs) │  │(config)│   │
+│  └──────┘  └───────┘  └────────┘   │
+└─────────────────────────────────────┘
+         │         │          │
+    ┌────┴────┐ ┌──┴───┐ ┌───┴──┐
+    │Envoy   │ │Envoy │ │Envoy │
+    │Sidecar │ │Sidecar│ │Sidecar│
+    └────────┘ └──────┘ └──────┘
+    Serviço A  Serviço B  Serviço C
+```
+
+## API Gateway vs Service Mesh
+
+```
+Feature              │ API Gateway        │ Service Mesh
+─────────────────────┼────────────────────┼────────────────
+Direção do Tráfego  │ Norte-Sul          │ Leste-Oeste
+Escopo               │ Externo → Interno  │ Só interno
+Autenticação         │ Auth do cliente    │ Auth do serviço
+                     │ (JWT)              │ (mTLS)
+Rate Limiting        │ Por cliente/API key│ Por serviço
+Protocolo            │ HTTP/REST/GraphQL  │ gRPC, HTTP, TCP
+Load Balancing       │ Cliente → Serviços │ Serviço → Serviço
+Observabilidade      │ Métricas de API    │ Tracing de serviço
+```
+
+**Eles se complementam.** Use os dois:
+
+```
+Cliente ──→ API Gateway ──→ [Service Mesh]
+                             Serviço A ←→ Serviço B
+                             Serviço B ←→ Serviço C
+                             Serviço A ←→ Serviço C
+```
+
+## Você Precisa de um Service Mesh?
+
+Honestamente? Talvez não. Service meshes adicionam complexidade. Minha opinião:
+
+**Você provavelmente precisa se:**
+- Você tem 20+ microserviços
+- Precisa de mTLS entre serviços
+- Quer observabilidade consistente entre serviços
+- Múltiplos times são donos de serviços diferentes
+
+**Você provavelmente não precisa se:**
+- Tem menos de 10 serviços
+- É um time pequeno
+- Seus serviços conversam principalmente por message broker
+- Não está em Kubernetes
+
+Comece com um API gateway. Adicione um service mesh quando a dor de gerenciar comunicação serviço-a-serviço ficar real.
+
+## Erros Comuns
+
+1. **Over-engineering cedo:** Você não precisa de Istio pra 3 microserviços
+2. **Gateway como lógica de negócio:** Mantenha ele fino, só roteamento e auth
+3. **Não monitorar o gateway:** Se o gateway cai, tudo cai
+4. **Ignorar a curva de aprendizado:** Service meshes são complexos, reserve tempo pra aprender
+5. **Ponto único de falha:** Sempre rode múltiplas instâncias do gateway
+
+---
+
+API gateways e service meshes são infraestrutura que permitem que seus times de desenvolvimento foquem em lógica de negócio ao invés de reinventar networking em cada serviço.
+
+Comece com um API gateway pro tráfego externo. Quando sua comunicação serviço-a-serviço ficar difícil de gerenciar, considere um service mesh.
+
+A sacada principal é que essas ferramentas existem pra que seu código de aplicação não precise lidar com preocupações transversais como auth, retries e observabilidade. Deixe a infraestrutura cuidar disso.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

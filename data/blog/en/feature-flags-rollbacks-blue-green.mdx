@@ -1,0 +1,396 @@
+---
+title: 'Feature Flags, Rollbacks, and Blue-Green Deploys'
+date: '2025-02-05'
+language: en
+tags: ['system-design', 'devops', 'deployment', 'reliability']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Deploying to production does not have to be terrifying. Feature flags, blue-green deploys, and canary releases give you control over how and when users see new code. Let me show you how to deploy with confidence.'
+images: ['/static/images/system_design.webp']
+---
+
+Ever pushed code to production on a Friday and immediately regretted it? We've all been there. The deploy goes out, something breaks, users are screaming, and you're scrambling to figure out how to undo everything.
+
+The truth is, **deploying doesn't have to be scary**. With the right strategies, you can ship code confidently, control who sees what, and roll back in seconds when things go wrong.
+
+Let's talk about the tools that make this possible.
+
+## The Problem with Big Bang Deploys
+
+Traditional deployment looks like this:
+
+```
+1. Write code for 3 months
+2. Test everything (hopefully)
+3. Deploy everything at once on a Tuesday at 2am
+4. Pray
+5. When it breaks, panic
+```
+
+This is the "big bang" approach, and it's awful. You're deploying a massive chunk of changes, so when something breaks, good luck figuring out which change caused it.
+
+Modern deployment strategies flip this on its head.
+
+## Feature Flags
+
+Feature flags (or feature toggles) let you deploy code without releasing it. The code is in production, but hidden behind a flag that you control.
+
+```python
+# Simple feature flag check
+def get_checkout_page(user):
+    if feature_flags.is_enabled("new_checkout", user):
+        return render_new_checkout(user)
+    else:
+        return render_old_checkout(user)
+```
+
+### Why This Is Powerful
+
+1. **Deploy anytime:** Code is in production but invisible
+2. **Gradual rollout:** Enable for 1% of users, then 5%, then 25%, then 100%
+3. **Instant rollback:** Flip the flag off, done
+4. **A/B testing:** Show different experiences to different users
+
+### Types of Feature Flags
+
+```
+Release Flags      → Control feature rollout (temporary)
+Experiment Flags   → A/B testing (temporary)
+Ops Flags          → Kill switches for load shedding (semi-permanent)
+Permission Flags   → Premium features for specific users (permanent)
+```
+
+### Implementation
+
+A basic feature flag system:
+
+```python
+class FeatureFlagService:
+    def __init__(self, config_store):
+        self.store = config_store
+
+    def is_enabled(self, flag_name, user=None):
+        flag = self.store.get(flag_name)
+
+        if not flag or not flag.get("enabled"):
+            return False
+
+        # Check percentage rollout
+        if "percentage" in flag:
+            user_hash = hash(f"{flag_name}:{user.id}") % 100
+            return user_hash < flag["percentage"]
+
+        # Check user allowlist
+        if "allowed_users" in flag:
+            return user.id in flag["allowed_users"]
+
+        return True
+
+
+# Usage
+flags = FeatureFlagService(redis_store)
+
+# Enable for 10% of users
+flags.store.set("new_checkout", {
+    "enabled": True,
+    "percentage": 10
+})
+
+# Enable for specific users (internal testing)
+flags.store.set("new_checkout", {
+    "enabled": True,
+    "allowed_users": ["dev-team-1", "dev-team-2"]
+})
+```
+
+### Progressive Rollout Strategy
+
+```
+Day 1: Internal team only (allowed_users)
+Day 2: 1% of users (percentage: 1)
+Day 3: 5% of users (percentage: 5)
+Day 5: 25% of users (percentage: 25)
+Day 7: 50% of users (percentage: 50)
+Day 10: 100% (remove flag, clean up code)
+```
+
+Monitor error rates, latency, and user feedback at each stage. If something looks wrong, dial it back.
+
+### Feature Flag Services
+
+Don't build your own for production. Use:
+- **LaunchDarkly** - industry standard, great SDKs
+- **Unleash** - open source alternative
+- **Flagsmith** - open source with cloud option
+- **AWS AppConfig** - if you're already on AWS
+- **Split** - feature flags + experimentation
+
+## Blue-Green Deployments
+
+Blue-green is simple: you have two identical production environments. One is "blue" (live), one is "green" (idle).
+
+```
+                    ┌──────────────┐
+Users ──→ LB ──→   │   BLUE (v1)  │  ← Currently live
+                    └──────────────┘
+                    ┌──────────────┐
+                    │  GREEN (v2)  │  ← Deploy here, test
+                    └──────────────┘
+```
+
+### The Process
+
+```
+Step 1: Blue is serving traffic (current version)
+Step 2: Deploy new version to Green
+Step 3: Test Green thoroughly (smoke tests, health checks)
+Step 4: Switch load balancer to point to Green
+Step 5: Green is now live, Blue becomes idle
+
+         ┌──────────────┐
+         │   BLUE (v1)  │  ← Now idle (keep as rollback)
+         └──────────────┘
+         ┌──────────────┐
+Users →  │  GREEN (v2)  │  ← Now serving traffic
+         └──────────────┘
+```
+
+### Rollback
+
+Something wrong? Switch back to Blue. It takes seconds.
+
+```
+# NGINX example: switch upstream
+upstream backend {
+    # Switch which server is active
+    server green.internal:8080;  # Comment this out to rollback
+    # server blue.internal:8080;  # Uncomment this to rollback
+}
+```
+
+In practice with AWS or Kubernetes:
+
+```bash
+# AWS: Switch target group
+aws elbv2 modify-listener --listener-arn $LISTENER_ARN \
+    --default-actions Type=forward,TargetGroupArn=$BLUE_TG_ARN
+
+# Kubernetes: Switch service selector
+kubectl patch service myapp -p '{"spec":{"selector":{"version":"v1"}}}'
+```
+
+### Pros and Cons
+
+**Pros:**
+- Zero-downtime deployments
+- Instant rollback
+- Full testing in production-like environment
+
+**Cons:**
+- Double the infrastructure cost
+- Database migrations are tricky (both versions must work with same DB)
+- Session management needs to be stateless
+
+## Canary Deployments
+
+Canary is like blue-green, but more gradual. Instead of switching 100% of traffic at once, you send a small percentage to the new version first.
+
+```
+              ┌──────────────┐
+         95%  │   Current    │
+Users ──→ LB─┤   (v1)       │
+         5%  │              │
+              └──────────────┘
+              ┌──────────────┐
+              │   Canary     │
+              │   (v2)       │
+              └──────────────┘
+```
+
+### Gradual Traffic Shifting
+
+```yaml
+# Kubernetes Ingress with traffic splitting
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "5"
+spec:
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /
+            backend:
+              service:
+                name: myapp-canary
+                port:
+                  number: 80
+```
+
+### Automated Canary with Metrics
+
+```python
+def canary_deploy(service, new_version):
+    stages = [5, 10, 25, 50, 75, 100]
+
+    for percentage in stages:
+        set_traffic_weight(service, new_version, percentage)
+        print(f"Canary at {percentage}%")
+
+        # Wait and check metrics
+        time.sleep(300)  # 5 minutes
+
+        metrics = get_metrics(service, new_version)
+
+        if metrics.error_rate > 1.0:  # > 1% errors
+            print(f"Error rate too high: {metrics.error_rate}%")
+            rollback(service)
+            return False
+
+        if metrics.p99_latency > 500:  # > 500ms
+            print(f"Latency too high: {metrics.p99_latency}ms")
+            rollback(service)
+            return False
+
+    print("Canary deployment successful!")
+    return True
+```
+
+## Rolling Deployments
+
+Update instances one at a time (or in batches). The simplest strategy for Kubernetes.
+
+```
+Instance 1: v1 → v2 (updated)
+Instance 2: v1           (still old)
+Instance 3: v1           (still old)
+Instance 4: v1           (still old)
+
+Then...
+
+Instance 1: v2 (updated)
+Instance 2: v1 → v2 (updating)
+Instance 3: v1           (still old)
+Instance 4: v1           (still old)
+```
+
+```yaml
+# Kubernetes rolling update
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1  # At most 1 pod down during update
+      maxSurge: 1         # At most 1 extra pod during update
+```
+
+## Rollback Strategies
+
+### Automated Rollback
+
+```python
+def deploy_with_auto_rollback(service, version):
+    previous_version = get_current_version(service)
+
+    deploy(service, version)
+
+    # Health check loop
+    for i in range(10):
+        time.sleep(30)
+        health = check_health(service)
+
+        if not health.is_healthy:
+            print(f"Unhealthy! Rolling back to {previous_version}")
+            deploy(service, previous_version)
+            alert_team(f"Auto-rollback: {service} from {version} to {previous_version}")
+            return False
+
+    return True
+```
+
+### Database Rollback Considerations
+
+This is where it gets tricky. You can rollback code easily, but database migrations? Not so much.
+
+**Rule: Make migrations forward-compatible.**
+
+```sql
+-- GOOD: Additive migration (easy to rollback code)
+ALTER TABLE users ADD COLUMN nickname VARCHAR(100);
+-- Old code ignores the new column, no problem
+
+-- BAD: Destructive migration (can't rollback code)
+ALTER TABLE users DROP COLUMN email;
+-- Old code expects email column, rollback fails!
+```
+
+**The expand-contract pattern:**
+
+```
+Phase 1 (Expand): Add new column, keep old one
+Phase 2 (Migrate): Write to both, read from new
+Phase 3 (Contract): Remove old column (after all code uses new one)
+```
+
+## Comparing Strategies
+
+```
+Strategy        │ Rollback Speed │ Risk    │ Infra Cost │ Complexity
+────────────────┼────────────────┼─────────┼────────────┼───────────
+Big Bang        │ Slow (redeploy)│ High    │ Low        │ Low
+Blue-Green      │ Instant        │ Low     │ 2x         │ Medium
+Canary          │ Fast           │ Very Low│ +small %   │ High
+Rolling         │ Medium         │ Medium  │ Same       │ Low
+Feature Flags   │ Instant        │ Very Low│ Same       │ Medium
+```
+
+## Best Practices
+
+1. **Combine strategies:** Feature flags + canary deploys = maximum safety
+2. **Automate everything:** Manual deploys are error-prone
+3. **Monitor aggressively:** If you can't measure it, you can't catch it
+4. **Practice rollbacks:** Don't wait for a real incident to try rolling back
+5. **Make deploys boring:** The best deploy is one nobody notices
+
+```python
+# The ideal deploy pipeline
+def deploy_pipeline(service, version):
+    # 1. Feature flag for new behavior
+    enable_flag("new_feature", percentage=0)
+
+    # 2. Canary deploy the code
+    canary_deploy(service, version)
+
+    # 3. Gradually enable the feature
+    for pct in [1, 5, 10, 25, 50, 100]:
+        enable_flag("new_feature", percentage=pct)
+        monitor_and_wait(minutes=30)
+
+    # 4. Clean up flag after full rollout
+    remove_flag("new_feature")
+```
+
+## Common Mistakes
+
+1. **Not having a rollback plan:** "We'll figure it out" is not a plan
+2. **Feature flag debt:** Leaving old flags in code forever
+3. **Not testing the rollback path:** Rollback should be as tested as deployment
+4. **Ignoring database compatibility:** Code rollback + incompatible DB = disaster
+5. **Deploying on Fridays:** Just... don't. Seriously.
+
+---
+
+Safe deployments aren't about avoiding risk entirely. They're about having control. Feature flags give you a kill switch. Blue-green gives you an escape route. Canary gives you early warning.
+
+Use them together, and deploying becomes just another Tuesday activity instead of a stress event.
+
+Questions? Drop them in the comments!
+
+Until next time!

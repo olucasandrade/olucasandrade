@@ -1,0 +1,480 @@
+---
+title: 'Database Sharding, Partitioning, and Replication'
+date: '2025-01-31'
+language: en
+tags: ['system-design', 'database', 'scalability', 'data']
+authors: ['lucas-andrade']
+draft: true
+summary: 'When your single database can not keep up anymore, you have three powerful tools: partitioning, sharding, and replication. Let me break down what each one does, how they differ, and when you should (and should not) use them.'
+images: ['/static/images/system_design.webp']
+---
+
+Your database is struggling. Queries are getting slow. Disk is filling up. You've already vertically scaled your database server as much as your budget allows. Now what?
+
+Welcome to the world of database scaling strategies. These are the tools that let companies like Uber, Spotify, and Shopify handle billions of rows without breaking a sweat.
+
+But fair warning: these are powerful tools that add real complexity. Let's make sure you understand them before reaching for them.
+
+## Partitioning: Splitting Data Within a Database
+
+Partitioning divides a large table into smaller, more manageable pieces, but they all stay within the **same database server**. Think of it like organizing a huge filing cabinet into labeled drawers.
+
+### Vertical Partitioning
+
+Split a table by **columns**. Move infrequently accessed or large columns to a separate table.
+
+```sql
+-- Before: one fat table
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    email VARCHAR(100),
+    password_hash VARCHAR(255),
+    bio TEXT,              -- rarely accessed, potentially large
+    avatar BYTEA,          -- rarely accessed, definitely large
+    preferences JSONB,     -- rarely accessed
+    created_at TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+-- After: vertical partitioning
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    email VARCHAR(100),
+    password_hash VARCHAR(255),
+    created_at TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+CREATE TABLE user_profiles (
+    user_id INT REFERENCES users(id),
+    bio TEXT,
+    avatar BYTEA,
+    preferences JSONB
+);
+```
+
+**Why?** Your main `users` table is now much smaller. Queries that only need name and email are way faster because they don't have to skip over huge blobs of data.
+
+### Horizontal Partitioning
+
+Split a table by **rows**. Different rows go to different partitions based on some criteria.
+
+```sql
+-- PostgreSQL native partitioning
+CREATE TABLE orders (
+    id SERIAL,
+    user_id INT,
+    amount DECIMAL,
+    created_at TIMESTAMP
+) PARTITION BY RANGE (created_at);
+
+-- Each partition holds a specific date range
+CREATE TABLE orders_2024_q1 PARTITION OF orders
+    FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
+
+CREATE TABLE orders_2024_q2 PARTITION OF orders
+    FOR VALUES FROM ('2024-04-01') TO ('2024-07-01');
+
+CREATE TABLE orders_2024_q3 PARTITION OF orders
+    FOR VALUES FROM ('2024-07-01') TO ('2024-10-01');
+
+CREATE TABLE orders_2024_q4 PARTITION OF orders
+    FOR VALUES FROM ('2024-10-01') TO ('2025-01-01');
+```
+
+Now when you query `SELECT * FROM orders WHERE created_at = '2024-08-15'`, the database only looks at `orders_2024_q3`. The other partitions aren't even touched. This is called **partition pruning** and it's incredibly powerful.
+
+## Sharding: Splitting Data Across Databases
+
+Sharding takes horizontal partitioning to the next level. Instead of splitting rows within a single database, you split them across **multiple database servers**.
+
+```
+┌─────────────────┐
+│   Application   │
+└────────┬────────┘
+         │
+    ┌────▼────┐
+    │ Router  │  (decides which shard)
+    └────┬────┘
+    ┌────┼────────────┐
+    │    │            │
+┌───▼──┐ ┌───▼──┐ ┌───▼──┐
+│Shard │ │Shard │ │Shard │
+│  1   │ │  2   │ │  3   │
+│A-H   │ │I-P   │ │Q-Z   │
+└──────┘ └──────┘ └──────┘
+```
+
+Each shard is a fully independent database. This is how you get truly horizontal database scaling.
+
+### Sharding Strategies
+
+#### Range-Based Sharding
+
+Assign rows to shards based on a range of the shard key.
+
+```python
+def get_shard(user_id):
+    if user_id < 1_000_000:
+        return "shard_1"
+    elif user_id < 2_000_000:
+        return "shard_2"
+    else:
+        return "shard_3"
+```
+
+**Pros:**
+- Simple to understand
+- Range queries within a shard are efficient
+- Easy to add new shards
+
+**Cons:**
+- **Hot spots.** If most new users are active, shard_3 gets hammered while shard_1 is basically idle.
+- Uneven data distribution over time
+
+#### Hash-Based Sharding
+
+Use a hash function to evenly distribute data.
+
+```python
+import hashlib
+
+NUM_SHARDS = 4
+
+def get_shard(user_id):
+    hash_value = int(hashlib.md5(str(user_id).encode()).hexdigest(), 16)
+    return f"shard_{hash_value % NUM_SHARDS}"
+
+# user_id=123  → shard_2
+# user_id=456  → shard_0
+# user_id=789  → shard_3
+```
+
+**Pros:**
+- Even distribution of data
+- No hot spots (usually)
+
+**Cons:**
+- Range queries become a nightmare (you have to query ALL shards)
+- **Resharding is painful.** Adding a new shard changes the hash, so data has to be redistributed
+
+#### Consistent Hashing
+
+A smarter version of hash-based sharding that minimizes data movement when adding/removing shards.
+
+```python
+import hashlib
+
+class ConsistentHash:
+    def __init__(self, nodes, virtual_nodes=100):
+        self.ring = {}
+        self.sorted_keys = []
+
+        for node in nodes:
+            for i in range(virtual_nodes):
+                key = self._hash(f"{node}:{i}")
+                self.ring[key] = node
+                self.sorted_keys.append(key)
+
+        self.sorted_keys.sort()
+
+    def _hash(self, key):
+        return int(hashlib.md5(key.encode()).hexdigest(), 16)
+
+    def get_node(self, data_key):
+        hash_val = self._hash(str(data_key))
+        for key in self.sorted_keys:
+            if hash_val <= key:
+                return self.ring[key]
+        return self.ring[self.sorted_keys[0]]
+
+# Usage
+nodes = ["shard_1", "shard_2", "shard_3"]
+ch = ConsistentHash(nodes)
+
+print(ch.get_node("user:123"))  # shard_2
+print(ch.get_node("user:456"))  # shard_1
+```
+
+When you add `shard_4`, only about 1/N of the data needs to move instead of reshuffling everything. This is what systems like DynamoDB and Cassandra use under the hood.
+
+#### Directory-Based Sharding
+
+Maintain a lookup table that maps each record to its shard.
+
+```python
+class ShardDirectory:
+    def __init__(self):
+        self.directory = {}  # Usually stored in a fast DB like Redis
+
+    def register(self, entity_id, shard):
+        self.directory[entity_id] = shard
+
+    def get_shard(self, entity_id):
+        return self.directory.get(entity_id)
+
+    def move(self, entity_id, new_shard):
+        # Move data, then update directory
+        old_shard = self.directory[entity_id]
+        data = old_shard.read(entity_id)
+        new_shard.write(entity_id, data)
+        self.directory[entity_id] = new_shard
+        old_shard.delete(entity_id)
+```
+
+**Pros:**
+- Maximum flexibility. You can move any record to any shard.
+- No resharding issues.
+
+**Cons:**
+- The directory itself becomes a single point of failure and a potential bottleneck.
+- Extra lookup on every query.
+
+## Replication: Copies for Safety and Speed
+
+Replication creates copies of your data on multiple servers. Unlike sharding (where each server has different data), replication means multiple servers have the **same data**.
+
+### Leader-Follower (Primary-Replica)
+
+The most common setup. One server handles all writes, and the others get copies of the data for reads.
+
+```
+                Writes
+    ┌─────────────▼─────────────┐
+    │         Leader            │
+    │    (reads + writes)       │
+    └──────┬──────────┬─────────┘
+           │ replicate│
+    ┌──────▼───┐ ┌────▼──────┐
+    │ Follower │ │ Follower  │
+    │ (reads)  │ │ (reads)   │
+    └──────────┘ └───────────┘
+```
+
+```python
+import psycopg2
+
+# Write to leader
+def create_user(name, email):
+    conn = psycopg2.connect(host="db-leader.example.com")
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (name, email) VALUES (%s, %s)", (name, email))
+    conn.commit()
+
+# Read from replica (eventually consistent)
+def get_user(user_id):
+    conn = psycopg2.connect(host="db-replica.example.com")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    return cur.fetchone()
+```
+
+**The catch:** there's always a **replication lag**. After you write to the leader, it might take a few milliseconds (or even seconds under load) for that data to appear on replicas.
+
+```python
+# This can be a problem!
+def register_and_login(name, email):
+    create_user(name, email)        # writes to leader
+    user = get_user_by_email(email) # reads from replica
+    # User might not exist on replica yet! Replication lag!
+```
+
+**Solution: read-your-own-writes.** After a write, read from the leader for a short period.
+
+```python
+def get_user(user_id, force_leader=False):
+    if force_leader:
+        conn = psycopg2.connect(host="db-leader.example.com")
+    else:
+        conn = psycopg2.connect(host="db-replica.example.com")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    return cur.fetchone()
+```
+
+### Multi-Leader Replication
+
+Multiple servers can accept writes. Used for multi-region setups where you need low write latency globally.
+
+```
+    Region: US                     Region: EU
+┌──────────────┐              ┌──────────────┐
+│   Leader 1   │◄────────────▶│   Leader 2   │
+│  (US writes) │  replicate   │  (EU writes) │
+└──────┬───────┘              └──────┬───────┘
+       │                             │
+  ┌────▼───┐                    ┌────▼───┐
+  │Replica │                    │Replica │
+  └────────┘                    └────────┘
+```
+
+**The hard part: write conflicts.** What if two leaders update the same row at the same time?
+
+```python
+# Leader 1 (US): UPDATE users SET name = 'Lucas A.' WHERE id = 123
+# Leader 2 (EU): UPDATE users SET name = 'Lucas Andrade' WHERE id = 123
+
+# Who wins? You need a conflict resolution strategy:
+# - Last write wins (LWW) - simple but can lose data
+# - Merge the changes - complex but preserves data
+# - Let the application decide - most flexible
+```
+
+Multi-leader is powerful but complex. Only use it if you truly need multi-region write capability.
+
+## Consistency Challenges
+
+When you start replicating and sharding, consistency becomes your biggest headache.
+
+### Replication Lag
+
+```
+Timeline:
+  t=0ms   Leader receives write
+  t=1ms   Leader commits to disk
+  t=5ms   Replica 1 receives update
+  t=15ms  Replica 2 receives update (network is slower)
+
+If you read from Replica 2 at t=10ms, you get stale data!
+```
+
+### Cross-Shard Queries
+
+Want to join data that lives on different shards? Tough luck.
+
+```python
+# This is easy with one database:
+# SELECT u.name, o.amount FROM users u JOIN orders o ON u.id = o.user_id
+
+# With sharding, users and orders might be on different shards!
+def get_user_orders(user_id):
+    user_shard = get_user_shard(user_id)
+    order_shard = get_order_shard(user_id)
+
+    user = user_shard.query("SELECT * FROM users WHERE id = %s", user_id)
+    orders = order_shard.query("SELECT * FROM orders WHERE user_id = %s", user_id)
+
+    # Application-level join... not great
+    return {"user": user, "orders": orders}
+```
+
+### Cross-Shard Transactions
+
+Even worse than queries. Distributed transactions are notoriously hard and slow.
+
+```python
+# You can't just do:
+# BEGIN;
+# UPDATE shard1.accounts SET balance = balance - 100 WHERE user_id = 1;
+# UPDATE shard2.accounts SET balance = balance + 100 WHERE user_id = 2;
+# COMMIT;
+
+# You need a two-phase commit or saga pattern
+def transfer_money(from_user, to_user, amount):
+    from_shard = get_shard(from_user)
+    to_shard = get_shard(to_user)
+
+    # Phase 1: Prepare
+    from_shard.prepare_debit(from_user, amount)
+    to_shard.prepare_credit(to_user, amount)
+
+    # Phase 2: Commit
+    from_shard.commit()
+    to_shard.commit()
+    # What if commit fails on one shard? Welcome to distributed systems!
+```
+
+## When NOT to Shard
+
+This is important. Sharding adds **massive** complexity. Don't do it unless you really need to.
+
+**Signs you DON'T need sharding yet:**
+
+- Your database is under 100GB. Modern databases handle this fine on a single server.
+- You haven't optimized your queries yet. Add indexes, optimize slow queries, use EXPLAIN.
+- You haven't tried read replicas. If reads are the bottleneck, replicas are way simpler.
+- You haven't tried caching. Redis can offload a huge amount of database reads.
+- You haven't tried vertical scaling. A bigger database server is often the cheapest solution.
+
+**The progression should be:**
+
+```
+1. Optimize queries and add indexes
+2. Add application-level caching (Redis)
+3. Vertically scale the database
+4. Add read replicas
+5. Partition tables (within same database)
+6. Shard (only when everything else isn't enough)
+```
+
+**Signs you DO need sharding:**
+
+- Single database can't handle the write volume
+- Data size exceeds what one server can store
+- You need data locality for compliance (GDPR, etc.)
+- You're a very large-scale operation
+
+## Practical Tips
+
+### Choose Your Shard Key Wisely
+
+The shard key is the most important decision. Get it wrong and you'll have hot spots and cross-shard queries everywhere.
+
+```
+Good shard keys:
+- user_id (for user-centric apps)
+- tenant_id (for multi-tenant SaaS)
+- region (for geo-distributed data)
+
+Bad shard keys:
+- created_at (all new data goes to one shard)
+- status (most orders are "completed", creating hot spots)
+- auto-increment ID (sequential = uneven distribution with range sharding)
+```
+
+### Co-locate Related Data
+
+If users and their orders are on the same shard, you can still do joins. Shard both tables by `user_id`.
+
+```python
+# Both on the same shard = local join possible
+user_shard = get_shard(user_id)  # shard_2
+order_shard = get_shard(user_id)  # also shard_2!
+
+# This join works within a single shard
+user_shard.query("""
+    SELECT u.name, o.amount
+    FROM users u JOIN orders o ON u.id = o.user_id
+    WHERE u.id = %s
+""", user_id)
+```
+
+### Monitor Shard Balance
+
+Keep an eye on how evenly data is distributed.
+
+```python
+def check_shard_balance():
+    for shard in shards:
+        row_count = shard.query("SELECT COUNT(*) FROM users")[0]
+        disk_usage = shard.query("SELECT pg_database_size(current_database())")[0]
+        qps = shard.get_queries_per_second()
+        print(f"{shard.name}: {row_count} rows, {disk_usage}GB, {qps} QPS")
+
+# Output:
+# shard_1: 2,340,123 rows, 45GB, 1,200 QPS
+# shard_2: 2,289,456 rows, 43GB, 1,150 QPS
+# shard_3: 8,901,234 rows, 120GB, 4,500 QPS  ← HOT SPOT!
+```
+
+---
+
+Database scaling is one of those areas where the right answer is almost always "do the simplest thing that works." Partitioning, sharding, and replication are all powerful tools, but each one adds complexity that you'll have to live with forever.
+
+Start with optimizing what you have. Add read replicas when reads are the bottleneck. Partition tables that are getting too large. And only shard when you've exhausted the simpler options.
+
+Have questions about database scaling? Running into issues with a specific strategy? Drop them in the comments!
+
+Until next time!

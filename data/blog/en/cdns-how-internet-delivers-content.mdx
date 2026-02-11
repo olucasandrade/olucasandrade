@@ -1,0 +1,296 @@
+---
+title: 'CDNs: How the Internet Delivers Content in Milliseconds'
+date: '2025-01-19'
+language: en
+tags: ['system-design', 'cdn', 'performance', 'infrastructure']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Ever wondered how Netflix streams video to millions of users worldwide without lag? The answer is CDNs. Let me show you how these networks of servers make the internet feel fast, no matter where you are.'
+images: ['/static/images/cdn.png']
+---
+
+Ever wondered how you can watch a video on YouTube that's hosted in the US when you're sitting in Brazil, and it still loads instantly? Or how a website with millions of users worldwide manages to feel fast for everyone?
+
+The answer is CDN - Content Delivery Network.
+
+## The Problem: Distance Matters
+
+Here's the thing about the internet: data can't travel faster than the speed of light. And while light is fast, the Earth is big.
+
+```
+São Paulo to Virginia (AWS us-east-1): ~7,500 km
+Light speed: 300,000 km/s
+Minimum theoretical latency: ~25ms one way, 50ms round trip
+
+But in practice? 150-200ms because of:
+- Routing through multiple networks
+- Processing at each hop
+- Protocol overhead
+```
+
+So if your server is in Virginia and your user is in São Paulo, every single request has to travel 15,000 km round trip. That adds up fast.
+
+Now imagine serving an image-heavy webpage. 50 images × 150ms = users waiting 7.5 seconds just for network latency. Unacceptable.
+
+## CDN: Bringing Content Closer
+
+A CDN is essentially a network of servers distributed around the world. Instead of all requests going to your origin server, they go to the nearest CDN server (called an "edge" server or PoP - Point of Presence).
+
+```
+Without CDN:
+User (Brazil) ──────────────────────────> Origin (USA)
+                    150ms latency
+
+With CDN:
+User (Brazil) ────> Edge (São Paulo) ────> Origin (USA)
+                    10ms latency     (only on cache miss)
+```
+
+The CDN caches your content at edge locations. When a user requests something, the edge server either:
+1. **Cache hit:** Returns the content immediately (fast!)
+2. **Cache miss:** Fetches from origin, caches it, then returns (slow first time, fast after)
+
+## What Should You Put on a CDN?
+
+**Perfect for CDN (static content):**
+- Images, videos, audio files
+- CSS, JavaScript files
+- Fonts
+- PDF documents
+- Static HTML pages
+
+**Can use CDN (with care):**
+- API responses (if cacheable)
+- Dynamic pages with short TTL
+- Personalized content with edge computing
+
+**Not ideal for CDN:**
+- Real-time data
+- User-specific content
+- Frequently changing data
+- Sensitive/private data
+
+## How Caching Works
+
+The magic of CDNs is in caching. When you configure a CDN, you set cache rules that tell edge servers how long to keep content.
+
+```http
+# HTTP Cache Headers
+
+Cache-Control: public, max-age=31536000
+# Cache for 1 year, anyone can cache it
+
+Cache-Control: private, max-age=3600
+# Cache for 1 hour, only browser can cache (not CDN)
+
+Cache-Control: no-store
+# Never cache this
+
+Cache-Control: no-cache
+# Can cache, but must revalidate with origin before using
+```
+
+### Cache Invalidation
+
+Here's the tricky part. What happens when you update content that's already cached?
+
+Options:
+1. **Wait for TTL to expire:** Simple but slow
+2. **Purge/Invalidate:** Tell CDN to delete cached content
+3. **Cache busting:** Change the URL (add version or hash)
+
+```html
+<!-- Cache busting example -->
+<link rel="stylesheet" href="/styles.css?v=1.2.3">
+<script src="/app.js?hash=abc123"></script>
+<img src="/logo.png?v=20250119">
+```
+
+Most modern build tools do this automatically by adding content hashes to filenames.
+
+## CDN Architecture Deep Dive
+
+### Edge Locations
+
+Major CDNs have hundreds of PoPs worldwide. When a user makes a request, DNS directs them to the nearest edge.
+
+```
+User DNS request: cdn.example.com
+↓
+CDN's DNS (anycast) routes to nearest PoP
+↓
+Edge server in user's city serves content
+```
+
+### Origin Shield
+
+Some CDNs offer an "origin shield" - a middle layer that protects your origin server.
+
+```
+Without shield:
+Edge A (cache miss) → Origin
+Edge B (cache miss) → Origin
+Edge C (cache miss) → Origin
+(3 requests to origin)
+
+With shield:
+Edge A (cache miss) → Shield → Origin
+Edge B (cache miss) → Shield (already cached)
+Edge C (cache miss) → Shield (already cached)
+(1 request to origin)
+```
+
+This is crucial for protecting your origin during traffic spikes.
+
+## Popular CDN Providers
+
+### Cloudflare
+- Huge free tier
+- Built-in DDoS protection
+- Workers (edge computing)
+- Easy setup with DNS
+
+### AWS CloudFront
+- Deep AWS integration
+- Lambda@Edge for edge computing
+- Pay per use
+- Good for AWS-heavy architectures
+
+### Fastly
+- Real-time purging (instant cache invalidation)
+- VCL for advanced configuration
+- Great for dynamic content
+- Used by GitHub, Stripe, etc.
+
+### Others
+- Akamai (enterprise, huge network)
+- Azure CDN
+- Google Cloud CDN
+- Bunny CDN (budget-friendly)
+
+## CDN for APIs?
+
+Yes, you can use CDNs for APIs! But you need to be careful.
+
+```python
+# Good: Cacheable API response
+@app.route('/api/products')
+def get_products():
+    products = fetch_products()  # Same for all users
+    response = jsonify(products)
+    response.headers['Cache-Control'] = 'public, max-age=300'  # 5 min
+    return response
+
+# Bad: User-specific, can't cache
+@app.route('/api/user/profile')
+def get_profile():
+    user = get_current_user()  # Different for each user
+    return jsonify(user.profile)
+    # Don't cache this on CDN!
+```
+
+For APIs, consider:
+- **Vary header:** Cache different versions based on headers
+- **Short TTL:** 1-5 minutes for frequently changing data
+- **Stale-while-revalidate:** Serve stale content while fetching fresh
+
+## Edge Computing
+
+Modern CDNs can run code at the edge, not just cache content. This is a game changer.
+
+```javascript
+// Cloudflare Worker example
+addEventListener('fetch', event => {
+  event.respondWith(handleRequest(event.request))
+})
+
+async function handleRequest(request) {
+  // Run this code at the edge, close to the user
+  const country = request.cf.country
+
+  if (country === 'BR') {
+    return Response.redirect('https://br.example.com')
+  }
+
+  // Fetch from origin
+  return fetch(request)
+}
+```
+
+Use cases for edge computing:
+- A/B testing
+- Geolocation redirects
+- Authentication checks
+- Request/response transformation
+- Bot detection
+
+## CDN Gotchas
+
+### Cache Poisoning
+If your origin returns an error and the CDN caches it, all users see the error. Always configure:
+- Don't cache error responses
+- Set appropriate TTL for different status codes
+
+### Cost Surprises
+CDNs charge for bandwidth. A viral post or DDoS attack can rack up huge bills. Set up:
+- Budget alerts
+- Rate limiting
+- DDoS protection
+
+### CORS Issues
+CDN can complicate CORS. Make sure your origin sets proper headers:
+```http
+Access-Control-Allow-Origin: https://example.com
+Access-Control-Allow-Methods: GET, POST
+```
+
+### Cache Key Problems
+By default, CDNs cache based on URL. If you have query params that don't affect content, configure the CDN to ignore them.
+
+```
+/api/products?utm_source=twitter  # Should be same cache
+/api/products?utm_source=facebook # as this
+```
+
+## Setting Up a CDN (Cloudflare Example)
+
+1. **Sign up** at cloudflare.com
+2. **Add your site** and update nameservers
+3. **Configure caching rules:**
+
+```
+# Page Rules example
+*.example.com/static/*
+  Cache Level: Cache Everything
+  Edge Cache TTL: 1 month
+
+*.example.com/api/*
+  Cache Level: Bypass
+
+example.com/*
+  Cache Level: Standard
+```
+
+4. **Enable features:**
+- Auto Minify (JS, CSS, HTML)
+- Brotli compression
+- HTTP/2 & HTTP/3
+- Always HTTPS
+
+## When NOT to Use a CDN
+
+- **Development environment:** You want to see changes immediately
+- **Highly personalized content:** Every user sees different content
+- **Real-time applications:** WebSocket connections, live data
+- **Small, local audience:** CDN overhead isn't worth it
+- **Sensitive data:** Some regulations require data locality
+
+---
+
+CDNs are one of those things that seem like magic until you understand how they work. They're basically "just caching" but at a global scale, with smart routing and edge computing capabilities.
+
+For most web applications, adding a CDN is one of the highest-impact, lowest-effort performance improvements you can make. It's literally putting your content closer to your users.
+
+Questions about implementing a CDN? Hit me up in the comments!
+
+Until next time!

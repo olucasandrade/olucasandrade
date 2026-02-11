@@ -1,0 +1,511 @@
+---
+title: 'Monitoramento, Métricas e Alertas'
+date: '2025-02-03'
+language: pt
+tags: ['system-design', 'monitoring', 'observability', 'devops']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Se você não monitora, não sabe o que tá acontecendo. E se não sabe o que tá acontecendo, qualquer problema vira surpresa. Métricas, alertas e dashboards são os olhos e ouvidos do seu sistema em produção.'
+images: ['/static/images/system_design.webp']
+---
+
+Imagina dirigir um carro sem painel. Sem velocímetro, sem indicador de combustível, sem luz de temperatura. Você até chega no destino... até que o motor superaquece e você fica parado na estrada sem saber por quê.
+
+É exatamente isso que acontece quando você roda um sistema em produção sem monitoramento. Tudo funciona até não funcionar, e aí você tá no escuro.
+
+Bora entender como monitorar de verdade: o que medir, como medir e quando alertar.
+
+## Os Quatro Sinais Dourados
+
+O Google, no livro SRE (Site Reliability Engineering), definiu quatro métricas fundamentais que todo serviço deveria monitorar. Eles chamam de **Four Golden Signals**:
+
+### 1. Latência
+
+O tempo que uma requisição leva pra ser atendida.
+
+```
+Latência é importante porque:
+  - Latência alta = usuários insatisfeitos
+  - Latência crescente = possível problema se formando
+  - Diferença entre latência de sucesso e erro importa
+
+O que medir:
+  - p50 (mediana): metade das requisições é mais rápida que isso
+  - p95: 95% das requisições é mais rápida que isso
+  - p99: 99% das requisições é mais rápida que isso
+
+Exemplo:
+  p50 = 50ms    (a maioria dos usuários tá feliz)
+  p95 = 200ms   (5% dos usuários tá esperando um pouco)
+  p99 = 2000ms  (1% dos usuários tá sofrendo!)
+```
+
+```python
+# Medindo latência com Prometheus (Python)
+from prometheus_client import Histogram
+
+request_latency = Histogram(
+    'http_request_duration_seconds',
+    'Duração das requisições HTTP',
+    ['method', 'endpoint', 'status'],
+    buckets=[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
+
+@app.middleware("http")
+async def track_latency(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+
+    request_latency.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code
+    ).observe(duration)
+
+    return response
+```
+
+### 2. Tráfego
+
+Quanto trabalho seu sistema tá processando.
+
+```
+Web service:  Requisições por segundo (RPS)
+Streaming:    Sessões ativas
+Queue:        Mensagens por segundo
+Database:     Queries por segundo (QPS)
+```
+
+```python
+from prometheus_client import Counter
+
+request_count = Counter(
+    'http_requests_total',
+    'Total de requisições HTTP',
+    ['method', 'endpoint', 'status']
+)
+
+# Incrementa a cada requisição
+request_count.labels(method='GET', endpoint='/api/products', status=200).inc()
+```
+
+### 3. Erros
+
+Taxa de requisições que falham.
+
+```
+O que contar como erro:
+  - HTTP 5xx (erros do servidor)
+  - HTTP 4xx relevantes (ex: 429 rate limit)
+  - Timeouts
+  - Respostas com dados incorretos (mais difícil de detectar)
+  - Exceções não tratadas
+
+Métrica chave: Error Rate = erros / total × 100%
+  Bom: < 0.1%
+  Aceitável: < 1%
+  Problema: > 1%
+  Incidente: > 5%
+```
+
+```python
+from prometheus_client import Counter
+
+error_count = Counter(
+    'http_errors_total',
+    'Total de erros HTTP',
+    ['method', 'endpoint', 'error_type']
+)
+
+# No handler de erro
+@app.exception_handler(Exception)
+async def handle_error(request, exc):
+    error_count.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        error_type=type(exc).__name__
+    ).inc()
+    return JSONResponse(status_code=500, content={"error": "Internal Server Error"})
+```
+
+### 4. Saturação
+
+Quão "cheio" seu serviço tá. Qual % da capacidade tá sendo usada.
+
+```
+O que monitorar:
+  - CPU utilization (%)
+  - Memory utilization (%)
+  - Disk I/O (%)
+  - Network bandwidth (%)
+  - Thread pool utilization (%)
+  - Connection pool utilization (%)
+  - Queue depth (profundidade da fila)
+```
+
+```python
+from prometheus_client import Gauge
+
+cpu_usage = Gauge('system_cpu_usage_percent', 'Uso de CPU em %')
+memory_usage = Gauge('system_memory_usage_percent', 'Uso de memória em %')
+connection_pool_usage = Gauge(
+    'db_connection_pool_usage',
+    'Conexões ativas / total do pool',
+    ['database']
+)
+
+# Atualiza periodicamente
+import psutil
+
+def update_system_metrics():
+    cpu_usage.set(psutil.cpu_percent())
+    memory_usage.set(psutil.virtual_memory().percent)
+```
+
+## Método RED
+
+Alternativa mais focada em microserviços. Pra cada serviço, monitore:
+
+```
+R - Rate:      Requisições por segundo
+E - Errors:    Erros por segundo
+D - Duration:  Distribuição de latência (histograma)
+```
+
+```python
+# Tudo que você precisa pra método RED em um middleware
+class REDMetrics:
+    def __init__(self):
+        self.rate = Counter('requests_total', 'Total requests', ['service', 'endpoint'])
+        self.errors = Counter('errors_total', 'Total errors', ['service', 'endpoint', 'type'])
+        self.duration = Histogram('request_duration_seconds', 'Request duration',
+                                  ['service', 'endpoint'])
+
+    def track(self, service, endpoint):
+        self.rate.labels(service=service, endpoint=endpoint).inc()
+        return self.duration.labels(service=service, endpoint=endpoint).time()
+
+    def track_error(self, service, endpoint, error_type):
+        self.errors.labels(service=service, endpoint=endpoint, type=error_type).inc()
+```
+
+## Método USE
+
+Focado em **recursos de infraestrutura**. Pra cada recurso, monitore:
+
+```
+U - Utilization:  Quanto do recurso está sendo usado (%)
+S - Saturation:   Trabalho enfileirado que não consegue ser atendido
+E - Errors:       Erros do recurso
+
+Recurso         │ Utilization      │ Saturation       │ Errors
+────────────────┼──────────────────┼──────────────────┼──────────
+CPU             │ % uso            │ Run queue length │ -
+Memória         │ % utilizada      │ Swap usage       │ OOM kills
+Disco           │ % capacidade     │ I/O queue depth  │ Disk errors
+Rede            │ % bandwidth      │ TCP retransmits  │ Interface errors
+Connection Pool │ % conexões ativas│ Wait queue       │ Timeout errors
+```
+
+## Prometheus + Grafana
+
+A stack mais popular de monitoramento open source.
+
+### Prometheus
+
+Coleta métricas fazendo scraping de endpoints HTTP.
+
+```yaml
+# prometheus.yml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: ['payment:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'order-service'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: order-service
+        action: keep
+```
+
+```python
+# Expondo métricas com prometheus_client
+from prometheus_client import start_http_server, Summary, Counter, Gauge, Histogram
+
+# Métricas do negócio
+orders_created = Counter('orders_created_total', 'Pedidos criados')
+active_users = Gauge('active_users', 'Usuários ativos')
+order_value = Histogram('order_value_reais', 'Valor dos pedidos em R$',
+                         buckets=[10, 50, 100, 500, 1000, 5000])
+
+# Inicia server de métricas na porta 8080/metrics
+start_http_server(8080)
+```
+
+### Grafana
+
+Dashboards bonitos que conectam no Prometheus (e em dezenas de outros data sources).
+
+```
+Dashboard essencial pro seu serviço:
+
+┌──────────────────────────────────────────────────┐
+│                Service Overview                   │
+├────────────────┬────────────────┬─────────────────┤
+│ RPS            │ Error Rate     │ P99 Latency     │
+│ ████████  1.2k │ ██░░░░  0.3%  │ ██████  180ms   │
+├────────────────┴────────────────┴─────────────────┤
+│            Request Rate (últimas 6h)              │
+│  1.5k ┤        ╭──╮                               │
+│  1.0k ┤───╮   ╱    ╰─╮    ╭──╮                   │
+│  0.5k ┤   ╰──╯       ╰────╯  ╰───               │
+│       └────────────────────────────               │
+├────────────────┬──────────────────────────────────┤
+│ CPU Usage      │ Memory Usage                     │
+│ ████░░  45%    │ ██████░  68%                     │
+└────────────────┴──────────────────────────────────┘
+```
+
+### PromQL: Queries no Prometheus
+
+```promql
+# Taxa de requisições por segundo (últimos 5 min)
+rate(http_requests_total[5m])
+
+# Taxa de erros (%)
+rate(http_errors_total[5m]) / rate(http_requests_total[5m]) * 100
+
+# Latência p99
+histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))
+
+# Uso de CPU por pod
+avg(rate(container_cpu_usage_seconds_total[5m])) by (pod)
+
+# Requisições por endpoint (top 5)
+topk(5, sum(rate(http_requests_total[5m])) by (endpoint))
+```
+
+## OpenTelemetry
+
+OpenTelemetry (OTel) é o padrão aberto que unifica métricas, traces e logs. É agnóstico de vendor: coleta dados uma vez, exporta pra qualquer backend.
+
+```python
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+
+# Configura OpenTelemetry com export pra Prometheus
+reader = PrometheusMetricReader()
+provider = MeterProvider(metric_readers=[reader])
+metrics.set_meter_provider(provider)
+
+meter = metrics.get_meter("payment-service")
+
+# Cria métricas
+request_counter = meter.create_counter(
+    "requests",
+    description="Total de requisições"
+)
+
+latency_histogram = meter.create_histogram(
+    "request_duration",
+    unit="ms",
+    description="Duração das requisições"
+)
+
+# Usa
+request_counter.add(1, {"endpoint": "/api/pay", "status": "200"})
+latency_histogram.record(45.2, {"endpoint": "/api/pay"})
+```
+
+## SLIs, SLOs e SLAs
+
+Termos que todo mundo confunde. Vou clarear:
+
+```
+SLI (Service Level Indicator):
+  Uma MÉTRICA que indica a qualidade do serviço.
+  Ex: "99.2% das requisições retornam em menos de 200ms"
+
+SLO (Service Level Objective):
+  Um OBJETIVO interno de qualidade.
+  Ex: "99.9% das requisições devem retornar em menos de 200ms"
+
+SLA (Service Level Agreement):
+  Um CONTRATO com o cliente com penalidades.
+  Ex: "Garantimos 99.95% de uptime, se não cumprirmos, damos crédito"
+
+Hierarquia:
+  SLA (contrato) → baseado em → SLO (objetivo) → medido por → SLI (métrica)
+```
+
+```python
+# Calculando SLI de disponibilidade
+def calculate_availability_sli(time_range):
+    total = prometheus.query(f'sum(http_requests_total[{time_range}])')
+    errors = prometheus.query(f'sum(http_errors_total[{time_range}])')
+
+    sli = (total - errors) / total * 100
+    return sli
+
+# SLO: 99.9% de disponibilidade
+sli = calculate_availability_sli("30d")
+slo = 99.9
+
+# Error Budget: quanto erro você pode ter
+error_budget = 100 - slo  # 0.1%
+error_budget_consumed = 100 - sli  # Ex: 0.05%
+error_budget_remaining = error_budget - error_budget_consumed  # 0.05%
+
+print(f"SLI: {sli}%")
+print(f"Error budget restante: {error_budget_remaining}%")
+# Se o error budget acabar, congela deploys e foca em confiabilidade
+```
+
+## Boas Práticas de Alertas
+
+### O que Alertar
+
+```
+ALERTE (acorde alguém) quando:
+  ✓ SLO em risco (error budget queimando rápido)
+  ✓ Serviço completamente fora (downtime)
+  ✓ Error rate acima de 5%
+  ✓ Latência p99 > 5x o normal
+  ✓ Disco vai encher nas próximas 4 horas
+
+NÃO ALERTE (use dashboard/log) quando:
+  ✗ CPU em 80% por 2 minutos (pode ser pico normal)
+  ✗ Um pod reiniciou (Kubernetes faz isso)
+  ✗ Deploy aconteceu (é esperado)
+  ✗ Coisas que não precisam de ação humana
+```
+
+### Regras de Alerta (Prometheus)
+
+```yaml
+groups:
+  - name: payment-service
+    rules:
+      # Error rate alta
+      - alert: HighErrorRate
+        expr: |
+          rate(http_errors_total{service="payment"}[5m])
+          / rate(http_requests_total{service="payment"}[5m])
+          > 0.05
+        for: 5m  # Precisa estar acima por 5 min (evita alertas por pico)
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate do payment-service acima de 5%"
+          description: "Error rate atual: {{ $value | humanizePercentage }}"
+
+      # Latência alta
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.99,
+            rate(http_request_duration_seconds_bucket{service="payment"}[5m])
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P99 latency do payment-service acima de 2s"
+
+      # Disco enchendo
+      - alert: DiskFillingUp
+        expr: |
+          predict_linear(
+            node_filesystem_free_bytes{mountpoint="/"}[6h], 4*3600
+          ) < 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disco vai encher nas próximas 4 horas"
+```
+
+### Evitando Fadiga de Alertas
+
+Fadiga de alertas é quando a equipe recebe tantos alertas que começa a ignorar todos, inclusive os críticos. É perigoso.
+
+```
+Sintomas de fadiga de alertas:
+  ✗ Time ignora alertas no Slack/PagerDuty
+  ✗ Alertas são silenciados sem investigação
+  ✗ "Ah, esse alerta sempre dispara, ignora"
+  ✗ Incidente real passa despercebido
+
+Como evitar:
+  ✓ Cada alerta DEVE ter uma ação clara (runbook)
+  ✓ Se um alerta dispara e não precisa de ação → REMOVE
+  ✓ Revise alertas mensalmente: quais dispararam? Quantos eram acionáveis?
+  ✓ Use severidades (critical = acorda alguém, warning = olha amanhã)
+  ✓ Agrupe alertas relacionados (1 alerta pro incidente, não 50)
+```
+
+```
+Severidades que funcionam:
+
+Critical (PagerDuty, acorda alguém):
+  - Serviço principal fora do ar
+  - Error rate > 10%
+  - SLO queimando rápido
+
+Warning (Slack, olha no horário comercial):
+  - Latência acima do normal
+  - Disco enchendo em 24h
+  - Réplica com lag alto
+
+Info (Dashboard, sem notificação):
+  - Deploy realizado
+  - Auto-scaling ativou
+  - Cache miss rate acima do normal
+```
+
+## Dashboard Recomendado
+
+```
+Todo serviço deveria ter pelo menos:
+
+1. Overview Dashboard
+   - RPS (requisições por segundo)
+   - Error rate (%)
+   - Latência (p50, p95, p99)
+   - Saturação (CPU, memória)
+
+2. Business Dashboard
+   - Métricas de negócio (pedidos, pagamentos, cadastros)
+   - Receita em tempo real
+   - Funil de conversão
+
+3. Infrastructure Dashboard
+   - Status dos pods/instâncias
+   - Uso de recursos (CPU, RAM, disco, rede)
+   - Connection pools
+   - Cache hit rate
+
+4. Dependencies Dashboard
+   - Latência por dependência externa
+   - Error rate por dependência
+   - Circuit breaker status
+```
+
+---
+
+Monitoramento não é opcional, é tão importante quanto o código em si. Um sistema sem monitoramento é um sistema que você não controla.
+
+Comece com os quatro sinais dourados (latência, tráfego, erros, saturação), configure alertas que realmente precisem de ação e crie dashboards que contem uma história sobre a saúde do sistema.
+
+E por favor: se um alerta dispara e você sempre ignora, delete o alerta. Alertas ignorados são piores que não ter alerta nenhum.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

@@ -1,0 +1,234 @@
+---
+title: 'From Containers to Clusters: Why We Need Orchestrators'
+date: '2025-01-28'
+language: en
+tags: ['system-design', 'kubernetes', 'containers', 'devops']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Running one container is easy. Running thousands across hundreds of machines? That is where orchestrators come in. Let me explain why Kubernetes exists and when you actually need it.'
+images: ['/static/images/containers-clusters.png']
+---
+
+Running one Docker container is easy. Running 500 containers across 50 machines, making sure they're healthy, scaling them up during peak hours, and rolling out updates without downtime? That's where things get real.
+
+This is why container orchestrators exist.
+
+## The Journey
+
+```
+Phase 1: "I'll just run it on a server"
+Phase 2: "I'll use Docker to make it portable"
+Phase 3: "I need multiple containers talking to each other"
+Phase 4: "I need to manage containers across multiple servers"
+Phase 5: "I need an orchestrator" ← You are here
+```
+
+## What Does an Orchestrator Do?
+
+Think of it as a team manager for your containers:
+
+1. **Scheduling:** Decides which machine runs which container
+2. **Scaling:** Adds/removes container instances based on demand
+3. **Health checking:** Restarts crashed containers
+4. **Networking:** Connects containers across machines
+5. **Load balancing:** Distributes traffic across instances
+6. **Rolling updates:** Deploys new versions without downtime
+7. **Secret management:** Handles sensitive configuration
+
+## Kubernetes (K8s)
+
+The industry standard. Originally built by Google, now open source.
+
+### Core Concepts
+
+```yaml
+# Pod: smallest deployable unit (one or more containers)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-app
+spec:
+  containers:
+    - name: app
+      image: my-app:1.0
+      ports:
+        - containerPort: 8080
+
+---
+# Deployment: manages Pods with replicas and updates
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+  template:
+    metadata:
+      labels:
+        app: my-app
+    spec:
+      containers:
+        - name: app
+          image: my-app:1.0
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "250m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+
+---
+# Service: exposes Pods to network
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app-service
+spec:
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: LoadBalancer
+```
+
+### Auto-Scaling
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: my-app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: my-app
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+```
+
+When CPU hits 70%, Kubernetes adds more Pods. When it drops, it removes them.
+
+### When to Use K8s
+- Many microservices that need to scale independently
+- Need zero-downtime deployments
+- Multi-environment consistency (dev, staging, prod)
+- Complex networking requirements
+
+### When NOT to Use K8s
+- Small project with 1-3 services
+- Team doesn't have K8s expertise
+- A simpler solution works fine
+
+## Amazon ECS
+
+AWS's container orchestrator. Simpler than K8s, deeply integrated with AWS.
+
+### Fargate (Serverless Containers)
+
+```json
+{
+  "family": "my-app",
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "my-app:1.0",
+      "portMappings": [{ "containerPort": 8080 }],
+      "memory": 512,
+      "cpu": 256
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc"
+}
+```
+
+No servers to manage. You define containers, AWS runs them.
+
+### When to Use ECS
+- Already on AWS
+- Want simpler operations than K8s
+- Fargate for serverless containers
+- Don't need multi-cloud
+
+## Nomad (HashiCorp)
+
+Simpler than K8s, supports containers AND non-container workloads.
+
+```hcl
+job "my-app" {
+  datacenters = ["dc1"]
+
+  group "web" {
+    count = 3
+
+    task "app" {
+      driver = "docker"
+
+      config {
+        image = "my-app:1.0"
+        ports = ["http"]
+      }
+
+      resources {
+        cpu    = 500
+        memory = 256
+      }
+    }
+
+    network {
+      port "http" { to = 8080 }
+    }
+  }
+}
+```
+
+### When to Use Nomad
+- Want simpler alternative to K8s
+- Need to orchestrate non-container workloads (JVM, binaries)
+- Multi-datacenter deployments
+- Already using HashiCorp stack
+
+## Comparison
+
+| Feature | Kubernetes | ECS | Nomad |
+|---------|-----------|-----|-------|
+| Complexity | High | Medium | Low |
+| Ecosystem | Huge | AWS-only | Growing |
+| Learning curve | Steep | Moderate | Gentle |
+| Multi-cloud | Yes | No | Yes |
+| Non-container | Limited | No | Yes |
+| Community | Massive | AWS support | HashiCorp |
+
+## The Honest Truth
+
+Most small-to-medium projects don't need Kubernetes. A simple Docker Compose setup, or ECS Fargate, or even a PaaS like Railway or Fly.io will do fine.
+
+Kubernetes shines when:
+- You have 10+ services
+- Multiple teams deploying independently
+- Complex scaling requirements
+- You need multi-cloud or hybrid cloud
+- You have the team to support it
+
+Don't adopt K8s because it's cool. Adopt it because you need what it offers.
+
+---
+
+Container orchestration is a spectrum. Start simple, add complexity only when the pain justifies it. Docker Compose for development, ECS or a PaaS for simple production, Kubernetes when you truly need it.
+
+Questions about choosing your orchestrator? Drop them in the comments!
+
+Until next time!

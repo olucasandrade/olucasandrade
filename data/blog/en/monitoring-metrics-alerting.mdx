@@ -1,0 +1,532 @@
+---
+title: 'Monitoring, Metrics, and Alerting'
+date: '2025-02-03'
+language: en
+tags: ['system-design', 'monitoring', 'observability', 'devops']
+authors: ['lucas-andrade']
+draft: true
+summary: 'You can not fix what you can not see. Monitoring, metrics, and alerting are the eyes and ears of your system. Let me walk you through the golden signals, the tools, and how to set up alerts that actually help instead of driving everyone crazy.'
+images: ['/static/images/system_design.webp']
+---
+
+There's a saying in the ops world: "If you didn't monitor it, it didn't happen." And honestly, it's true. You can build the most beautiful, well-architected system in the world, but if you can't see what's happening inside it, you're flying blind.
+
+I've seen production incidents where teams spent hours guessing what was wrong because they had no metrics, no logs, no dashboards. Don't be that team.
+
+## What is Observability?
+
+Before we dive in, let's clarify the difference between monitoring and observability.
+
+**Monitoring** tells you *when* something is wrong. "CPU is at 95%!" "Error rate spiked!"
+
+**Observability** tells you *why* something is wrong. It's the ability to understand the internal state of a system by examining its external outputs: metrics, logs, and traces.
+
+```
+Observability = Metrics + Logs + Traces
+
+Metrics → What is happening? (numbers over time)
+Logs    → Why is it happening? (detailed events)
+Traces  → Where is it happening? (request flow across services)
+```
+
+Today we're focusing on metrics and alerting. We'll cover logging and tracing in the next post.
+
+## The Four Golden Signals
+
+Google's SRE book introduced the **four golden signals**. If you only monitor four things, make it these:
+
+### 1. Latency
+
+How long does it take to serve a request?
+
+```python
+import time
+from prometheus_client import Histogram
+
+request_latency = Histogram(
+    'http_request_duration_seconds',
+    'Request latency in seconds',
+    ['method', 'endpoint', 'status'],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
+
+@app.middleware
+def track_latency(request, call_next):
+    start = time.time()
+    response = call_next(request)
+    duration = time.time() - start
+
+    request_latency.labels(
+        method=request.method,
+        endpoint=request.path,
+        status=response.status_code
+    ).observe(duration)
+
+    return response
+```
+
+**Important:** Track successful AND failed request latency separately. A request that errors out in 5ms looks fast but is actually broken.
+
+### 2. Traffic
+
+How much demand is being placed on your system?
+
+```python
+from prometheus_client import Counter
+
+request_count = Counter(
+    'http_requests_total',
+    'Total HTTP requests',
+    ['method', 'endpoint', 'status']
+)
+
+# In your middleware
+request_count.labels(
+    method=request.method,
+    endpoint=request.path,
+    status=response.status_code
+).inc()
+```
+
+### 3. Errors
+
+The rate of requests that fail.
+
+```python
+from prometheus_client import Counter
+
+error_count = Counter(
+    'http_errors_total',
+    'Total HTTP errors',
+    ['method', 'endpoint', 'error_type']
+)
+
+@app.exception_handler(Exception)
+def handle_error(request, exc):
+    error_count.labels(
+        method=request.method,
+        endpoint=request.path,
+        error_type=type(exc).__name__
+    ).inc()
+    return {"error": "Internal server error"}, 500
+```
+
+### 4. Saturation
+
+How "full" is your system? What percentage of capacity is being used?
+
+```python
+from prometheus_client import Gauge
+
+# CPU usage
+cpu_usage = Gauge('system_cpu_usage_percent', 'CPU usage percentage')
+
+# Memory usage
+memory_usage = Gauge('system_memory_usage_percent', 'Memory usage percentage')
+
+# Database connection pool
+db_pool_usage = Gauge('db_connection_pool_usage', 'DB pool connections in use')
+db_pool_size = Gauge('db_connection_pool_size', 'DB pool total size')
+
+# Queue depth
+queue_depth = Gauge('message_queue_depth', 'Messages waiting in queue', ['queue_name'])
+```
+
+## RED and USE Methods
+
+Beyond the four golden signals, there are two other popular frameworks.
+
+### RED Method (for services)
+
+**R**ate, **E**rrors, **D**uration. Focused on request-driven services.
+
+```python
+# Rate: requests per second
+# Errors: errors per second
+# Duration: time per request (distribution, not just average!)
+
+# These map directly to the golden signals.
+# Use RED when monitoring microservices.
+```
+
+### USE Method (for resources)
+
+**U**tilization, **S**aturation, **E**rrors. Focused on infrastructure resources (CPU, memory, disk, network).
+
+```python
+# For each resource, ask:
+# Utilization: How busy is it? (e.g., CPU at 75%)
+# Saturation: How much extra work is queued? (e.g., run queue length)
+# Errors: Are there any errors? (e.g., disk I/O errors)
+
+from prometheus_client import Gauge
+
+# CPU
+cpu_utilization = Gauge('cpu_utilization_percent', 'CPU utilization')
+cpu_saturation = Gauge('cpu_run_queue_length', 'CPU run queue length')
+
+# Disk
+disk_utilization = Gauge('disk_utilization_percent', 'Disk usage', ['mount_point'])
+disk_io_errors = Counter('disk_io_errors_total', 'Disk I/O errors', ['device'])
+
+# Network
+network_utilization = Gauge('network_bandwidth_usage_percent', 'Network bandwidth usage')
+network_errors = Counter('network_errors_total', 'Network errors', ['interface'])
+```
+
+## Prometheus + Grafana: The Classic Stack
+
+The most popular open-source monitoring stack.
+
+### How Prometheus Works
+
+```
+┌──────────┐    scrape     ┌────────────┐    query     ┌─────────┐
+│ Your App │◀──────────────│ Prometheus │◀─────────────│ Grafana │
+│ /metrics │               │  (TSDB)    │              │(dashboards)│
+└──────────┘               └────────────┘              └─────────┘
+```
+
+Prometheus **pulls** metrics from your application at regular intervals (usually every 15-30 seconds). Your app exposes a `/metrics` endpoint.
+
+```python
+from prometheus_client import start_http_server, Counter, Histogram, Gauge
+
+# Define metrics
+requests = Counter('app_requests_total', 'Total requests', ['method', 'path'])
+latency = Histogram('app_request_latency_seconds', 'Request latency')
+active_users = Gauge('app_active_users', 'Currently active users')
+
+# Expose metrics endpoint
+start_http_server(8000)  # Metrics available at :8000/metrics
+```
+
+The `/metrics` endpoint produces text like this:
+
+```
+# HELP app_requests_total Total requests
+# TYPE app_requests_total counter
+app_requests_total{method="GET",path="/api/users"} 12345
+app_requests_total{method="POST",path="/api/orders"} 6789
+
+# HELP app_request_latency_seconds Request latency
+# TYPE app_request_latency_seconds histogram
+app_request_latency_seconds_bucket{le="0.01"} 5000
+app_request_latency_seconds_bucket{le="0.05"} 10000
+app_request_latency_seconds_bucket{le="0.1"} 11500
+app_request_latency_seconds_bucket{le="+Inf"} 12345
+app_request_latency_seconds_sum 450.5
+app_request_latency_seconds_count 12345
+```
+
+### PromQL: Querying Metrics
+
+Prometheus has its own query language. Here are the queries you'll use the most:
+
+```promql
+# Request rate (requests per second, averaged over 5 minutes)
+rate(app_requests_total[5m])
+
+# Error rate as percentage
+sum(rate(app_requests_total{status=~"5.."}[5m])) /
+sum(rate(app_requests_total[5m])) * 100
+
+# 95th percentile latency
+histogram_quantile(0.95, rate(app_request_latency_seconds_bucket[5m]))
+
+# Average latency
+rate(app_request_latency_seconds_sum[5m]) /
+rate(app_request_latency_seconds_count[5m])
+
+# Memory usage percentage
+(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) /
+node_memory_MemTotal_bytes * 100
+```
+
+### Grafana Dashboards
+
+Grafana turns those metrics into beautiful, actionable dashboards. A good dashboard setup:
+
+```
+Dashboard: Service Overview
+├── Row: Traffic
+│   ├── Panel: Requests/sec (line chart)
+│   ├── Panel: Error rate % (line chart with threshold)
+│   └── Panel: Top endpoints by traffic (table)
+├── Row: Latency
+│   ├── Panel: p50 / p95 / p99 latency (multi-line)
+│   ├── Panel: Latency heatmap
+│   └── Panel: Slowest endpoints (table)
+├── Row: Saturation
+│   ├── Panel: CPU usage (gauge)
+│   ├── Panel: Memory usage (gauge)
+│   ├── Panel: DB connection pool (gauge)
+│   └── Panel: Queue depth (line chart)
+└── Row: Dependencies
+    ├── Panel: External API latency
+    └── Panel: Database query time
+```
+
+## OpenTelemetry
+
+OpenTelemetry (OTel) is becoming the standard for instrumentation. Instead of using vendor-specific libraries, you instrument your code once with OTel and send data to any backend.
+
+```python
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+
+# Set up OpenTelemetry with Prometheus exporter
+reader = PrometheusMetricReader()
+provider = MeterProvider(metric_readers=[reader])
+metrics.set_meter_provider(provider)
+
+meter = metrics.get_meter("my-app")
+
+# Create metrics using OTel API
+request_counter = meter.create_counter(
+    "http.requests",
+    description="Number of HTTP requests",
+    unit="1"
+)
+
+request_duration = meter.create_histogram(
+    "http.request.duration",
+    description="HTTP request duration",
+    unit="ms"
+)
+
+# Use them in your code
+def handle_request(request):
+    start = time.time()
+    try:
+        response = process(request)
+        request_counter.add(1, {"method": request.method, "status": 200})
+        return response
+    finally:
+        duration = (time.time() - start) * 1000
+        request_duration.record(duration, {"method": request.method})
+```
+
+The beauty of OTel is you can switch from Prometheus to Datadog to New Relic without changing your application code.
+
+## SLIs, SLOs, and SLAs
+
+These terms get thrown around a lot. Let's make them clear.
+
+### SLI (Service Level Indicator)
+
+A quantitative measure of a service's behavior. It's a metric.
+
+```
+Examples:
+- Request latency (p99 < 200ms)
+- Availability (successful requests / total requests)
+- Error rate (errors / total requests)
+- Throughput (requests per second)
+```
+
+### SLO (Service Level Objective)
+
+A target value for an SLI. It's what you promise to your team.
+
+```
+Examples:
+- 99.9% of requests complete in < 200ms
+- 99.95% availability over a 30-day window
+- Error rate < 0.1%
+```
+
+### SLA (Service Level Agreement)
+
+A contract with your customers. If you miss it, there are consequences (usually financial).
+
+```
+Example:
+- 99.9% uptime guaranteed
+- If uptime falls below 99.9%, customer gets 10% credit
+- If uptime falls below 99.0%, customer gets 30% credit
+```
+
+The relationship:
+
+```
+SLA: "We promise 99.9% uptime" (contract, with consequences)
+ └── SLO: "We target 99.95% uptime" (internal target, tighter than SLA)
+      └── SLI: "Uptime is currently 99.97%" (actual measurement)
+```
+
+Notice the SLO is tighter than the SLA. This gives you a buffer. You want to catch problems before they affect your SLA.
+
+### Error Budgets
+
+An error budget is how much you're allowed to fail within your SLO.
+
+```python
+# SLO: 99.9% availability per month
+# That means you have a 0.1% error budget
+
+total_minutes_per_month = 30 * 24 * 60  # 43,200 minutes
+error_budget_percent = 0.1
+error_budget_minutes = total_minutes_per_month * (error_budget_percent / 100)
+# = 43.2 minutes of allowed downtime per month
+
+# If you've used 30 minutes of your error budget this month:
+remaining_budget = 43.2 - 30  # 13.2 minutes left
+# Maybe slow down deployments until the budget resets!
+```
+
+Error budgets are powerful because they balance reliability with velocity. If you have budget left, ship faster. If you're running low, focus on stability.
+
+## Alerting Best Practices
+
+Setting up alerts is where monitoring turns into action. But bad alerting is worse than no alerting.
+
+### Alert on Symptoms, Not Causes
+
+```yaml
+# BAD: Alerting on causes
+- alert: HighCPU
+  expr: cpu_usage > 80%
+  # CPU can be at 80% and everything is fine!
+
+# GOOD: Alerting on symptoms
+- alert: HighLatency
+  expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "95th percentile latency is above 500ms"
+    description: "p95 latency has been above 500ms for 5 minutes. Current value: {{ $value }}s"
+```
+
+### The Alert Severity System
+
+```yaml
+# Page (wake someone up at 3 AM):
+- alert: ServiceDown
+  expr: up == 0
+  for: 2m
+  labels:
+    severity: critical
+
+# Warning (investigate during work hours):
+- alert: ErrorRatioHigh
+  expr: |
+    sum(rate(http_requests_total{status=~"5.."}[5m])) /
+    sum(rate(http_requests_total[5m])) > 0.01
+  for: 10m
+  labels:
+    severity: warning
+
+# Info (just for awareness):
+- alert: DiskUsageAbove70
+  expr: disk_usage_percent > 70
+  labels:
+    severity: info
+```
+
+### Avoiding Alert Fatigue
+
+Alert fatigue is real and dangerous. When people get too many alerts, they start ignoring ALL of them, including the critical ones.
+
+**Rules to live by:**
+
+1. **Every alert must be actionable.** If you can't do anything about it, it shouldn't be an alert. Put it on a dashboard instead.
+2. **Tune your thresholds.** If an alert fires constantly but nothing is actually wrong, raise the threshold or remove it.
+3. **Use `for` clauses.** Don't alert on brief spikes. Require the condition to persist.
+4. **Group related alerts.** Don't send 50 individual alerts when one "service is degraded" alert would do.
+5. **Review regularly.** Hold monthly alert reviews. If an alert hasn't fired in 3 months, is it still relevant? If it fires daily and gets ignored, fix or remove it.
+
+```yaml
+# Example of well-tuned alerting rules
+groups:
+  - name: api-health
+    rules:
+      # Only fires if sustained for 5 minutes
+      - alert: APIHighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API error rate above 5% for 5 minutes"
+          runbook_url: "https://wiki.example.com/runbooks/high-error-rate"
+
+      # Warning before critical
+      - alert: APIElevatedErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) /
+          sum(rate(http_requests_total[5m])) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API error rate above 1% for 15 minutes"
+```
+
+### On-Call Tips
+
+If you're doing on-call:
+
+```
+Good on-call alert:
+  ✓ Clear description of what's wrong
+  ✓ Link to dashboard showing the problem
+  ✓ Link to runbook with steps to investigate/fix
+  ✓ Severity level (is this "fix now" or "investigate tomorrow"?)
+
+Bad on-call alert:
+  ✗ "CPU high" (so what?)
+  ✗ No context, no links
+  ✗ Fires every night at 2 AM during batch jobs
+  ✗ Nobody knows what to do about it
+```
+
+## Quick Start Checklist
+
+If you're setting up monitoring from scratch, here's a practical order:
+
+```
+1. Instrument your app
+   □ Request rate (Counter)
+   □ Request latency (Histogram with p50, p95, p99)
+   □ Error rate (Counter by status code)
+   □ Active connections / in-flight requests (Gauge)
+
+2. Infrastructure metrics
+   □ CPU, memory, disk usage
+   □ Network I/O
+   □ Database connection pool
+
+3. Business metrics
+   □ Orders per minute
+   □ Revenue per hour
+   □ User sign-ups
+   □ Feature usage
+
+4. Dashboards
+   □ Service overview (golden signals)
+   □ Infrastructure overview
+   □ Business metrics
+
+5. Alerts
+   □ Service down (critical)
+   □ High error rate (critical)
+   □ High latency (warning)
+   □ Disk almost full (warning)
+   □ Error budget burning too fast (warning)
+```
+
+---
+
+Monitoring is not glamorous work, but it's the difference between "we detected and fixed the issue in 5 minutes" and "a customer tweeted that our app is down and we had no idea." Invest in it early, iterate on it often, and treat your dashboards and alerts like production code.
+
+Start with the four golden signals, set up a Prometheus + Grafana stack (or your cloud provider's equivalent), and add alerts that are actionable and meaningful.
+
+Got questions about monitoring setups? Want to share your own dashboarding tips? Drop them in the comments!
+
+Until next time!
