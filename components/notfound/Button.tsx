@@ -12,8 +12,7 @@ const Button = ({ text, href }: ButtonProps) => {
     <Link
       href={href}
       target={href.startsWith('http') ? `_blank` : ''}
-      className="group relative inline-flex items-center justify-center overflow-hidden rounded-md bg-primary-500 px-4 py-1.5 text-xs font-normal text-white transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg hover:shadow-primary-500/30 dark:bg-primary-500 dark:hover:shadow-primary-400/30"
-      style={{ textDecoration: 'none' }}
+      className="group relative inline-flex items-center justify-center overflow-hidden rounded-md bg-primary-500 px-4 py-1.5 text-xs font-normal text-white no-underline transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg hover:shadow-primary-500/30 dark:bg-primary-500 dark:hover:shadow-primary-400/30"
     >
       <span className="relative z-50 text-lg text-white">{text}</span>
       <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-13deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-13deg)_translateX(100%)]">

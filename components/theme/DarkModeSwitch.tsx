@@ -104,7 +104,7 @@ export const DarkModeSwitch: React.FC<Props> = ({
   const AnimatedG = animated('g')
 
   return (
-    <div style={{ display: 'flex' }}>
+    <div className="flex">
       <AnimatedSvg
         xmlns="http://www.w3.org/2000/svg"
         width={size}

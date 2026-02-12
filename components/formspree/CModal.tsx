@@ -65,9 +65,7 @@ export const CModal: React.FC<cModalProps> = ({
               onClick={handleClose}
               className="ml-auto border-0 p-1 transition hover:opacity-70"
             >
-              <p className="text-lg font-bold" style={{ fontSize: '1.5rem' }}>
-                &times;
-              </p>
+              <p className="text-2xl font-bold">&times;</p>
             </button>
           </div>
           <div className="relative flex-auto p-6">{body}</div>

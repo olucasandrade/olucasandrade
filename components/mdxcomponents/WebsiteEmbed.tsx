@@ -6,11 +6,11 @@ type EmbedPageProps = {
 const WebsiteEmbed = ({ website, title }: EmbedPageProps) => {
   return (
     <>
-      <div style={{ height: '100vh', overflow: 'hidden' }}>
+      <div className="h-screen overflow-hidden">
         <iframe
           src={`${website}`} // Replace with the URL you want to embed
           title={title}
-          style={{ border: 'none', width: '100%', height: '100%' }}
+          className="h-full w-full border-none"
           allowFullScreen
         />
       </div>

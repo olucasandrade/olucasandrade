@@ -83,11 +83,7 @@ const LangSwitch = () => {
                 onBlur={() => setIsMenuOpen(false)}
               >
                 <RadioGroup>
-                  <div
-                    className="py-1"
-                    role="none"
-                    style={{ listStyle: 'none', margin: 0, padding: 0 }}
-                  >
+                  <div className="m-0 list-none p-0 py-1" role="none">
                     {locales.map((newLocale: string) => (
                       <Radio key={newLocale} value={newLocale}>
                         <MenuItem>

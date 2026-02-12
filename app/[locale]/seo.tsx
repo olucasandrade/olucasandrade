@@ -22,6 +22,12 @@ export function genPageMetadata({
   return {
     title,
     description: description || maindescription[locale],
+    alternates: {
+      languages: {
+        en: `${siteMetadata.siteUrl}/`,
+        pt: `${siteMetadata.siteUrl}/pt`,
+      },
+    },
     openGraph: {
       title: `${title} | ${maintitle[locale]}`,
       description: description || maindescription[locale],

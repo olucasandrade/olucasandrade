@@ -54,6 +54,10 @@ export async function generateMetadata({
     },
     alternates: {
       canonical: './',
+      languages: {
+        en: `${siteMetadata.siteUrl}/`,
+        pt: `${siteMetadata.siteUrl}/pt`,
+      },
       types: {
         'application/rss+xml': `${siteMetadata.siteUrl}/feed.xml`,
       },
