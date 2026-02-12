@@ -1,0 +1,480 @@
+---
+title: 'Logging, Tracing e Observabilidade em Sistemas Distribuídos'
+date: '2025-02-04'
+language: pt
+tags: ['system-design', 'observability', 'logging', 'distributed-systems']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Em sistemas distribuídos, uma requisição passa por dezenas de serviços. Quando algo dá errado, como você descobre onde? Logging estruturado, distributed tracing e correlação de eventos são a resposta.'
+images: ['/static/images/system_design.webp']
+---
+
+Imagina um bug em produção. Usuário reclama: "meu pedido não foi processado". Você abre o log do serviço de pedidos: "Pedido recebido". Abre o log do serviço de pagamento: "Pagamento aprovado". Abre o log do serviço de estoque: nada. Onde tá o problema? Qual instância? Qual request?
+
+Em sistemas monolíticos, você tinha um log só. Em sistemas distribuídos, você tem N logs em N máquinas e precisa conectar os pontos.
+
+Bora entender como fazer isso direito.
+
+## Os Três Pilares da Observabilidade
+
+```
+Observabilidade = Logs + Métricas + Traces
+
+Logs:    O QUE aconteceu (eventos discretos)
+Métricas: QUANTO aconteceu (números agregados)
+Traces:  COMO aconteceu (caminho da requisição)
+
+Exemplo de um problema:
+  Métrica: "Error rate subiu pra 5%"
+  Log:     "Connection timeout ao chamar payment-service"
+  Trace:   "Request levou 30s, 29s foram no payment-service esperando DB"
+```
+
+## Logging Estruturado
+
+Logs não estruturados são inúteis em escala:
+
+```
+Ruim (log texto livre):
+2025-01-15 10:23:45 INFO Processing order 12345 for user john@email.com
+2025-01-15 10:23:46 ERROR Failed to process payment
+2025-01-15 10:23:46 INFO Retrying payment for order 12345
+
+Bom (log estruturado JSON):
+{"timestamp":"2025-01-15T10:23:45Z","level":"info","service":"order-service","order_id":"12345","user_id":"usr_789","action":"processing_started"}
+{"timestamp":"2025-01-15T10:23:46Z","level":"error","service":"order-service","order_id":"12345","error_type":"payment_failed","error_message":"connection timeout","retry_count":0}
+{"timestamp":"2025-01-15T10:23:46Z","level":"info","service":"order-service","order_id":"12345","action":"payment_retry","retry_count":1}
+```
+
+Por que estruturado é melhor?
+- Pode filtrar: `service=order-service AND level=error`
+- Pode agregar: "Quantos erros de payment_failed por hora?"
+- Pode fazer join: correlacionar logs de serviços diferentes pelo order_id
+
+```python
+# Python com structlog
+import structlog
+
+log = structlog.get_logger()
+
+def process_order(order_id: str, user_id: str):
+    # Bind context que aparece em todos os logs
+    log = log.bind(order_id=order_id, user_id=user_id)
+
+    log.info("processing_started")
+
+    try:
+        result = payment_service.charge(order_id)
+        log.info("payment_completed", amount=result.amount)
+    except PaymentError as e:
+        log.error("payment_failed",
+                  error_type=type(e).__name__,
+                  error_message=str(e))
+        raise
+```
+
+```javascript
+// Node.js com pino
+const pino = require('pino');
+const log = pino();
+
+function processOrder(orderId, userId) {
+  const orderLog = log.child({ orderId, userId });
+
+  orderLog.info({ action: 'processing_started' });
+
+  try {
+    const result = paymentService.charge(orderId);
+    orderLog.info({ action: 'payment_completed', amount: result.amount });
+  } catch (error) {
+    orderLog.error({
+      action: 'payment_failed',
+      errorType: error.name,
+      errorMessage: error.message
+    });
+    throw error;
+  }
+}
+```
+
+## Distributed Tracing
+
+O trace conecta todas as operações de uma requisição através de múltiplos serviços.
+
+```
+Conceitos:
+  Trace:  A jornada completa de uma requisição
+  Span:   Uma operação individual dentro do trace
+  Parent: O span que iniciou outro span
+
+Uma requisição cria um trace assim:
+
+Trace ID: abc123
+├── Span: api-gateway (10ms)
+│   └── Span: auth-service (5ms)
+├── Span: order-service (150ms)
+│   ├── Span: validate-order (10ms)
+│   ├── Span: payment-service (100ms)
+│   │   └── Span: database-query (80ms)  ← GARGALO!
+│   └── Span: inventory-service (30ms)
+└── Span: notification-service (20ms)
+
+Total: 150ms (payment-service domina o tempo)
+```
+
+### Implementando com OpenTelemetry
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Setup
+trace.set_tracer_provider(TracerProvider())
+tracer = trace.get_tracer(__name__)
+
+jaeger_exporter = JaegerExporter(
+    agent_host_name="jaeger",
+    agent_port=6831,
+)
+trace.get_tracer_provider().add_span_processor(
+    BatchSpanProcessor(jaeger_exporter)
+)
+
+# Uso
+def process_order(order_id: str):
+    with tracer.start_as_current_span("process_order") as span:
+        span.set_attribute("order_id", order_id)
+
+        # Cada operação vira um span filho
+        with tracer.start_as_current_span("validate_order"):
+            validate(order_id)
+
+        with tracer.start_as_current_span("charge_payment"):
+            payment_result = charge(order_id)
+            span.set_attribute("payment_amount", payment_result.amount)
+
+        with tracer.start_as_current_span("update_inventory"):
+            update_inventory(order_id)
+```
+
+### Propagação de Contexto
+
+O trace precisa ser propagado entre serviços. Isso é feito via headers HTTP:
+
+```python
+# Serviço A (chamador)
+import requests
+from opentelemetry.propagate import inject
+
+def call_payment_service(order_id: str):
+    headers = {}
+    inject(headers)  # Injeta trace context nos headers
+
+    response = requests.post(
+        "http://payment-service/charge",
+        json={"order_id": order_id},
+        headers=headers  # Headers incluem: traceparent, tracestate
+    )
+    return response.json()
+
+# Serviço B (chamado)
+from opentelemetry.propagate import extract
+from flask import request
+
+@app.route("/charge", methods=["POST"])
+def charge():
+    # Extrai trace context dos headers
+    context = extract(request.headers)
+
+    with tracer.start_as_current_span("charge_payment", context=context):
+        # Este span é filho do span do Serviço A
+        process_payment(request.json["order_id"])
+```
+
+Headers de propagação (W3C Trace Context):
+```http
+traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+             └─ versão
+                └─ trace-id (32 hex chars)
+                               └─ parent-span-id (16 hex chars)
+                                                  └─ flags (sampled)
+```
+
+## Correlation IDs
+
+Mesmo sem tracing completo, correlation IDs ajudam a conectar logs:
+
+```python
+import uuid
+from contextvars import ContextVar
+
+# Context var pra armazenar o correlation ID da request atual
+correlation_id_var: ContextVar[str] = ContextVar('correlation_id', default='')
+
+# Middleware que extrai ou gera correlation ID
+@app.middleware("http")
+async def correlation_middleware(request, call_next):
+    # Pega do header ou gera novo
+    correlation_id = request.headers.get('X-Correlation-ID', str(uuid.uuid4()))
+    correlation_id_var.set(correlation_id)
+
+    # Adiciona no response
+    response = await call_next(request)
+    response.headers['X-Correlation-ID'] = correlation_id
+    return response
+
+# Logger que inclui correlation ID automaticamente
+class CorrelationLogger:
+    def info(self, message, **kwargs):
+        log_entry = {
+            "correlation_id": correlation_id_var.get(),
+            "message": message,
+            **kwargs
+        }
+        print(json.dumps(log_entry))
+
+# Ao chamar outro serviço, propaga o correlation ID
+def call_other_service(endpoint: str, data: dict):
+    return requests.post(
+        endpoint,
+        json=data,
+        headers={"X-Correlation-ID": correlation_id_var.get()}
+    )
+```
+
+Agora você pode buscar todos os logs de uma requisição:
+```sql
+SELECT * FROM logs
+WHERE correlation_id = 'abc-123-def-456'
+ORDER BY timestamp
+```
+
+## Stack de Observabilidade
+
+### ELK Stack (Elasticsearch + Logstash + Kibana)
+
+```
+Fluxo:
+  App → Filebeat → Logstash → Elasticsearch → Kibana
+        (coleta)   (processa)  (armazena)     (visualiza)
+
+Logstash pipeline (logstash.conf):
+input {
+  beats {
+    port => 5044
+  }
+}
+
+filter {
+  json {
+    source => "message"
+  }
+  date {
+    match => ["timestamp", "ISO8601"]
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["elasticsearch:9200"]
+    index => "logs-%{service}-%{+YYYY.MM.dd}"
+  }
+}
+```
+
+### Loki + Grafana (mais leve que ELK)
+
+```yaml
+# docker-compose.yml
+services:
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    volumes:
+      - /var/log:/var/log
+    command: -config.file=/etc/promtail/config.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+```
+
+Loki não indexa o conteúdo dos logs (como Elasticsearch), só as labels. Muito mais barato e rápido pra casos simples.
+
+### Jaeger / Zipkin (Distributed Tracing)
+
+```yaml
+# Jaeger all-in-one pra desenvolvimento
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:1.50
+    ports:
+      - "6831:6831/udp"  # Agent (recebe spans)
+      - "16686:16686"    # UI
+      - "14268:14268"    # Collector
+```
+
+## Níveis de Log
+
+Use níveis de log consistentemente:
+
+```
+ERROR: Algo quebrou, precisa de atenção
+  - Exceção não tratada
+  - Falha de integração externa
+  - Dado corrompido
+
+WARN: Algo suspeito, mas o sistema continua funcionando
+  - Rate limit atingido
+  - Retry necessário
+  - Configuração deprecated
+
+INFO: Eventos normais de negócio
+  - Pedido criado
+  - Pagamento processado
+  - Usuário logou
+
+DEBUG: Detalhes pra troubleshooting (só em dev)
+  - Query SQL executada
+  - Payload completo da request
+  - Valores de variáveis
+
+TRACE: Detalhamento extremo (muito raro)
+  - Cada passo de um algoritmo
+  - Entry/exit de funções
+```
+
+```python
+# Configurar nível por ambiente
+import os
+import logging
+
+log_level = os.getenv("LOG_LEVEL", "INFO")
+logging.basicConfig(level=getattr(logging, log_level))
+
+# Em produção: LOG_LEVEL=INFO (ou WARN)
+# Em debug: LOG_LEVEL=DEBUG
+```
+
+## Sampling
+
+Em alta escala, logar 100% de tudo é caro demais. Use sampling:
+
+```python
+# Sampling de traces (OpenTelemetry)
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+
+# Amostra 10% dos traces
+sampler = TraceIdRatioBased(0.1)
+
+trace.set_tracer_provider(
+    TracerProvider(sampler=sampler)
+)
+
+# Sampling inteligente: sempre amostra erros
+from opentelemetry.sdk.trace.sampling import ParentBasedTraceIdRatio
+
+class ErrorAwareSampler:
+    def should_sample(self, context, trace_id, name, kind, attributes, links):
+        # Sempre amostra se tiver erro
+        if attributes.get("error") or attributes.get("http.status_code", 200) >= 500:
+            return SamplingResult(Decision.RECORD_AND_SAMPLE)
+
+        # 10% do resto
+        if random.random() < 0.1:
+            return SamplingResult(Decision.RECORD_AND_SAMPLE)
+
+        return SamplingResult(Decision.DROP)
+```
+
+## O Que Logar (e o Que Não Logar)
+
+```
+SEMPRE logue:
+  ✓ Início e fim de operações importantes
+  ✓ Erros com contexto suficiente pra debug
+  ✓ Decisões de negócio (aprovação, rejeição, etc.)
+  ✓ Chamadas a serviços externos
+  ✓ Eventos de segurança (login, logout, permissão negada)
+
+NUNCA logue:
+  ✗ Senhas, tokens, API keys
+  ✗ Dados pessoais sensíveis (CPF, cartão de crédito completo)
+  ✗ Logs em loop (evite log dentro de for com milhões de iterações)
+  ✗ Dados binários grandes (base64 de imagens, etc.)
+
+CUIDADO com:
+  ⚠ Email e nome (pode precisar mascarar pra LGPD)
+  ⚠ Request body completo (pode ter dados sensíveis)
+  ⚠ Logs muito verbose em produção
+```
+
+```python
+# Mascarando dados sensíveis
+def sanitize_for_logging(data: dict) -> dict:
+    sensitive_keys = {'password', 'token', 'api_key', 'credit_card', 'cpf'}
+
+    result = {}
+    for key, value in data.items():
+        if key.lower() in sensitive_keys:
+            result[key] = '***REDACTED***'
+        elif key.lower() == 'email':
+            result[key] = mask_email(value)  # j***@gmail.com
+        else:
+            result[key] = value
+    return result
+
+log.info("user_registered", data=sanitize_for_logging(user_data))
+```
+
+## Alertas Baseados em Logs
+
+Não só métricas geram alertas. Logs também:
+
+```yaml
+# Alert no Grafana Loki
+groups:
+  - name: log-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate({service="payment"} |= "error" [5m]))
+          / sum(rate({service="payment"} [5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate alto no payment-service"
+
+      - alert: PaymentFailures
+        expr: |
+          count_over_time({service="payment"}
+            |= "payment_failed"
+            | json
+            | error_type="insufficient_funds" [1h]) > 100
+        labels:
+          severity: warning
+        annotations:
+          summary: "Muitas falhas por saldo insuficiente"
+```
+
+---
+
+Observabilidade não é opcional em sistemas distribuídos. Sem ela, você tá cego.
+
+Comece com o básico: logs estruturados com correlation ID. Depois adicione métricas (Prometheus). Por fim, distributed tracing (Jaeger/Zipkin) pra entender o fluxo completo.
+
+E lembre: observabilidade não é só pra debug. É pra entender o comportamento normal do sistema também. Você precisa saber como é "normal" pra detectar quando algo tá anormal.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

@@ -1,0 +1,474 @@
+---
+title: 'Eficiência de Custos na Cloud: Gastando Certo em Escala'
+date: '2025-02-07'
+language: pt
+tags: ['system-design', 'cloud', 'cost-optimization', 'devops']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Contas de cloud podem assustar rápido. Aqui está como projetar sistemas que escalam sem fazer seu financeiro chorar. Reserved instances, spot pricing, right-sizing e decisões de arquitetura que economizam dinheiro de verdade.'
+images: ['/static/images/system_design.webp']
+---
+
+Nada mata uma startup mais rápido que uma conta de cloud surpresa. Já vi times irem de "cloud é tão conveniente" pra "por que a AWS tá cobrando $50k esse mês" bem rápido.
+
+A cloud não é cara. Usar ela errado é.
+
+Bora falar sobre como projetar sistemas que escalam sem quebrar o banco.
+
+## O Modelo de Preços da Cloud
+
+Primeiro, entenda como os providers ganham dinheiro:
+
+```
+Como eles cobram:
+  Compute:  Por hora/segundo de CPU rodando
+  Storage:  Por GB armazenado por mês
+  Network:  Por GB transferido (egress é caro!)
+  Requests: Por chamada de API (pra serverless)
+
+O que pega a galera de surpresa:
+  - Transferência entre regiões: $$$
+  - Transferência pra internet: $$$
+  - Transferência na mesma região: geralmente grátis
+  - Recursos ociosos: ainda pagando preço cheio
+  - Instâncias super-provisionadas: pagando por capacidade que não usa
+```
+
+## Right-Sizing: A Fruta Mais Baixa
+
+A maioria das empresas provisiona 30-50% a mais. Right-sizing é dinheiro de graça.
+
+```
+Sinais de que você tá pagando demais:
+  - CPU média < 20%
+  - Uso de memória < 40%
+  - "Provisionamos pro pico de tráfego" (que acontece uma vez por mês)
+  - Ninguém nunca olhou os tamanhos das instâncias depois do setup inicial
+
+Exemplo de economia:
+  c5.4xlarge (16 vCPU, 32GB) → c5.xlarge (4 vCPU, 8GB)
+  Antes: $0.68/hora × 730 horas = $496/mês
+  Depois: $0.17/hora × 730 horas = $124/mês
+  Economia: $372/mês por instância
+
+  10 instâncias = $3,720/mês = $44,640/ano
+```
+
+```python
+# Script simples pra encontrar instâncias EC2 super-provisionadas
+import boto3
+from datetime import datetime, timedelta
+
+cloudwatch = boto3.client('cloudwatch')
+ec2 = boto3.client('ec2')
+
+def get_cpu_average(instance_id, days=14):
+    response = cloudwatch.get_metric_statistics(
+        Namespace='AWS/EC2',
+        MetricName='CPUUtilization',
+        Dimensions=[{'Name': 'InstanceId', 'Value': instance_id}],
+        StartTime=datetime.utcnow() - timedelta(days=days),
+        EndTime=datetime.utcnow(),
+        Period=3600,
+        Statistics=['Average']
+    )
+    if response['Datapoints']:
+        return sum(d['Average'] for d in response['Datapoints']) / len(response['Datapoints'])
+    return None
+
+# Encontra instâncias com < 20% de utilização de CPU
+instances = ec2.describe_instances()
+for reservation in instances['Reservations']:
+    for instance in reservation['Instances']:
+        instance_id = instance['InstanceId']
+        cpu = get_cpu_average(instance_id)
+        if cpu and cpu < 20:
+            print(f"{instance_id}: {cpu:.1f}% CPU - candidato pra downsizing")
+```
+
+## Reserved Instances vs On-Demand vs Spot
+
+Três modelos de preço, três casos de uso:
+
+```
+On-Demand (paga conforme usa):
+  - Preço cheio
+  - Sem compromisso
+  - Melhor pra: workloads imprevisíveis, testes
+
+Reserved Instances (compromisso de 1-3 anos):
+  - 30-60% de desconto
+  - Compromete com tipo de instância e região específicos
+  - Melhor pra: workloads estáveis e previsíveis
+
+  Exemplo:
+    c5.xlarge On-Demand:  $0.17/hora = $1,241/ano
+    c5.xlarge 1yr RI:     $0.10/hora = $730/ano (41% economia)
+    c5.xlarge 3yr RI:     $0.07/hora = $511/ano (59% economia)
+
+Spot Instances (leilão de capacidade ociosa):
+  - 60-90% de desconto
+  - Pode ser terminada com aviso de 2 minutos
+  - Melhor pra: workloads tolerantes a falha, stateless
+
+  Casos de uso:
+    ✓ Processamento batch
+    ✓ Pipelines CI/CD
+    ✓ Ambientes dev/test
+    ✓ Workers web stateless (com auto-scaling)
+    ✗ Bancos de dados
+    ✗ Workloads de produção com instância única
+```
+
+### Arquitetura pra Spot Instances
+
+```python
+# Lidando com terminação de spot instance graciosamente
+import requests
+import time
+import sys
+
+def check_spot_termination():
+    """Verifica se essa spot instance vai ser terminada"""
+    try:
+        # AWS dá aviso de 2 minutos via instance metadata
+        response = requests.get(
+            'http://169.254.169.254/latest/meta-data/spot/termination-time',
+            timeout=1
+        )
+        if response.status_code == 200:
+            return True  # Vamos ser terminados
+    except:
+        pass
+    return False
+
+def graceful_shutdown():
+    """Limpa e drena conexões"""
+    print("Terminação spot detectada! Iniciando shutdown gracioso...")
+    # Para de aceitar trabalho novo
+    # Termina tarefas atuais
+    # Drena conexões
+    # Salva estado no S3/DynamoDB
+    sys.exit(0)
+
+# Verifica a cada 5 segundos
+while True:
+    if check_spot_termination():
+        graceful_shutdown()
+    time.sleep(5)
+```
+
+## Economia de Serverless
+
+Serverless (Lambda, Cloud Functions) inverte o modelo de custo:
+
+```
+Tradicional: Paga por servidores rodando 24/7
+Serverless:  Paga só quando código executa
+
+Análise de break-even:
+  Preço Lambda: $0.20 por 1M requests + $0.0000166667/GB-segundo
+
+  Pra uma função de 128MB rodando 100ms:
+    Por request: $0.0000002 + $0.0000002083 = $0.0000004083
+
+  1M requests/mês = $0.41
+  10M requests/mês = $4.10
+  100M requests/mês = $41.00
+
+  vs EC2 t3.micro ($7.59/mês) lidando com mesmo tráfego
+
+  Lambda é mais barato quando:
+    - Tráfego é em rajadas
+    - Muitos endpoints com baixo tráfego cada
+    - Você valoriza não gerenciar servidores
+
+  EC2 é mais barato quando:
+    - Tráfego alto e consistente
+    - Processos de longa duração
+    - Precisa de conexões persistentes (WebSockets)
+```
+
+### Custo de Cold Start
+
+Cold starts não são só um problema de latência, eles custam dinheiro:
+
+```
+Cenário cold start:
+  - Função inicializa (2 segundos)
+  - Função executa (100ms)
+  - Você é cobrado por 2.1 segundos
+
+Cenário warm:
+  - Função executa (100ms)
+  - Você é cobrado por 100ms
+
+Soluções:
+  1. Manter funções quentes (pings agendados)
+  2. Provisioned concurrency (paga por instâncias quentes garantidas)
+  3. Otimizar código de inicialização
+  4. Aceitar cold starts pra caminhos não críticos
+```
+
+## Transferência de Dados: O Assassino Silencioso
+
+Custos de transferência de dados te pegam de surpresa:
+
+```
+Preços de transferência AWS (aproximados):
+  Mesma AZ:             Grátis
+  AZs diferentes:       $0.01/GB
+  Regiões diferentes:   $0.02/GB
+  Saída pra internet:   $0.09/GB
+  CloudFront pra usuários: $0.085/GB (mais barato que direto!)
+
+Exemplo: Serviço de streaming de vídeo
+  1TB/dia egress pra usuários = 30TB/mês
+  Direto do S3:     30,000 GB × $0.09 = $2,700/mês
+  Via CloudFront:   30,000 GB × $0.085 = $2,550/mês (e mais rápido!)
+
+  Melhor: Usar CloudFront + habilitar compressão
+  Comprimido (30% economia): 21,000 GB × $0.085 = $1,785/mês
+```
+
+### Decisões de Arquitetura Que Reduzem Custos de Transferência
+
+```
+1. Mantenha compute perto dos dados
+   Ruim:  S3 em us-east-1, compute em eu-west-1
+   Bom:   S3 e compute na mesma região
+
+2. Use VPC endpoints pros serviços AWS
+   Sem:  Tráfego vai pela internet (custos de NAT gateway)
+   Com:  Tráfego fica na rede AWS (mais barato)
+
+3. Comprima tudo
+   Antes: 1GB resposta JSON
+   Depois: 100MB resposta gzip
+   Economia: 90% em transferência de dados
+
+4. Cache agressivamente
+   1M requests/dia × 100KB resposta = 100GB/dia
+   Com 80% cache hit rate = 20GB/dia
+   Economia: 80%
+
+5. Considere multi-CDN ou peering direto pra alto volume
+   CloudFront: $0.085/GB
+   Direct connect ou bandwidth dedicado: muito mais barato em escala
+```
+
+## Otimização de Custo de Banco de Dados
+
+Bancos de dados são frequentemente o maior centro de custo:
+
+```
+Breakdown de custo RDS:
+  - Horas de instância (maior parte)
+  - Storage (IOPS provisionado é caro!)
+  - Transferência de dados
+  - Backups além do tier grátis
+
+Estratégias de otimização:
+
+1. Use Aurora Serverless pra workloads variáveis
+   RDS tradicional: Paga pela instância 24/7
+   Aurora Serverless: Escala até zero quando ocioso
+   Ótimo pra: Dev/test, workloads infrequentes
+
+2. Read replicas ao invés de instâncias maiores
+   Escale leituras horizontalmente (mais barato que verticalmente)
+
+3. Reserved instances pra bancos de produção
+   Bancos rodam 24/7 → perfeitos pra RIs
+
+4. Archive dados antigos pro S3
+   Storage RDS: $0.115/GB/mês
+   S3 Standard:  $0.023/GB/mês
+   S3 Glacier:   $0.004/GB/mês
+```
+
+```python
+# Exemplo: Arquivar dados antigos pro S3
+import boto3
+from datetime import datetime, timedelta
+
+def archive_old_records(cutoff_days=365):
+    """Move registros mais velhos que cutoff pro S3, deleta do RDS"""
+    cutoff_date = datetime.now() - timedelta(days=cutoff_days)
+
+    # Query registros antigos
+    old_records = db.query(
+        "SELECT * FROM orders WHERE created_at < %s",
+        [cutoff_date]
+    )
+
+    # Escreve no S3 (Parquet pra compressão)
+    s3 = boto3.client('s3')
+    s3.put_object(
+        Bucket='meu-bucket-archive',
+        Key=f'orders/year={cutoff_date.year}/data.parquet',
+        Body=to_parquet(old_records),
+        StorageClass='GLACIER'  # Mais barato pra archive
+    )
+
+    # Deleta do RDS
+    db.execute(
+        "DELETE FROM orders WHERE created_at < %s",
+        [cutoff_date]
+    )
+```
+
+## Auto-Scaling Feito Certo
+
+Auto-scaling economiza dinheiro casando capacidade com demanda:
+
+```yaml
+# Kubernetes HPA com scaling consciente de custo
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: meu-app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: meu-app
+  minReplicas: 2
+  maxReplicas: 50
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70  # Escala pra cima em 70% (não 50%!)
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Espera 5 min antes de escalar pra baixo
+      policies:
+        - type: Percent
+          value: 10  # Remove máx 10% dos pods por minuto (suave)
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0  # Escala pra cima imediatamente
+      policies:
+        - type: Percent
+          value: 100  # Pode dobrar capacidade rapidamente
+          periodSeconds: 15
+```
+
+```
+Erros comuns de auto-scaling:
+
+1. Scale-down muito agressivo
+   Problema: Pods removidos, tráfego aumenta, scale-up, repete
+   Custo: Churn constante, recursos desperdiçados em startup
+   Fix: Janela de estabilização mais longa
+
+2. Scale-up muito conservador
+   Problema: Latência aumenta durante pico de tráfego
+   Custo: Receita perdida, experiência ruim pro usuário
+   Fix: Scale-up rápido, scale-down lento
+
+3. Escalar na métrica errada
+   Ruim: Escalar em CPU pra workload I/O-bound
+   Bom: Escalar em profundidade de fila ou latência
+```
+
+## Monitoramento de Custos e Alertas
+
+Você não pode otimizar o que não mede:
+
+```python
+# Configurar alertas de budget AWS
+import boto3
+
+budgets = boto3.client('budgets')
+
+budgets.create_budget(
+    AccountId='123456789012',
+    Budget={
+        'BudgetName': 'Budget-Mensal-AWS',
+        'BudgetLimit': {
+            'Amount': '10000',
+            'Unit': 'USD'
+        },
+        'TimeUnit': 'MONTHLY',
+        'BudgetType': 'COST'
+    },
+    NotificationsWithSubscribers=[
+        {
+            'Notification': {
+                'NotificationType': 'ACTUAL',
+                'ComparisonOperator': 'GREATER_THAN',
+                'Threshold': 80,  # Alerta em 80% do budget
+                'ThresholdType': 'PERCENTAGE'
+            },
+            'Subscribers': [
+                {'SubscriptionType': 'EMAIL', 'Address': 'time@empresa.com'}
+            ]
+        },
+        {
+            'Notification': {
+                'NotificationType': 'FORECASTED',
+                'ComparisonOperator': 'GREATER_THAN',
+                'Threshold': 100,  # Alerta se previsão exceder budget
+                'ThresholdType': 'PERCENTAGE'
+            },
+            'Subscribers': [
+                {'SubscriptionType': 'EMAIL', 'Address': 'time@empresa.com'}
+            ]
+        }
+    ]
+)
+```
+
+### Tags de Alocação de Custo
+
+Tagueie tudo. Sério.
+
+```
+Tags obrigatórias pra cada recurso:
+  - Environment: prod/staging/dev
+  - Team: payments/orders/platform
+  - Service: api/worker/database
+  - CostCenter: engineering/marketing/operations
+
+Benefícios:
+  - Ver custo por time
+  - Ver custo por ambiente (dev geralmente é 30% de prod!)
+  - Identificar recursos órfãos (sem tag de owner = candidato pra deletar)
+  - Chargeback pra departamentos
+```
+
+## O Checklist de FinOps
+
+```
+Semanal:
+  □ Revisar top 10 itens de custo
+  □ Verificar recursos não usados (0 tráfego)
+  □ Revisar cobertura de Reserved Instance
+
+Mensal:
+  □ Análise de right-sizing
+  □ Decisões de compra de Reserved Instance
+  □ Revisão de otimização de transferência de dados
+  □ Limpeza de storage (snapshots antigos, volumes não usados)
+
+Trimestral:
+  □ Revisão de arquitetura pra otimização de custo
+  □ Renegociar acordos enterprise
+  □ Avaliar novas opções de preço (Savings Plans, etc.)
+```
+
+---
+
+Otimização de custos de cloud não é coisa de uma vez só. É uma prática. Construa na cultura de engenharia: tagueie recursos, revise contas, faça right-sizing regularmente.
+
+O objetivo não é gastar o mínimo possível. É conseguir o máximo valor por real. Às vezes isso significa gastar mais em confiabilidade. Às vezes significa cortar desperdício sem piedade.
+
+Comece com as frutas mais baixas: right-sizing e reserved instances. Essas duas sozinhas tipicamente economizam 40-60% pra maioria das empresas.
+
+Dúvidas sobre otimizar sua conta de cloud? Manda nos comentários!
+
+Até a próxima!

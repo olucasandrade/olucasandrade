@@ -1,0 +1,286 @@
+---
+title: 'Circuit Breaker: Quando Deixar as Coisas Falharem com Elegância'
+date: '2025-01-25'
+language: pt
+tags: ['system-design', 'fault-tolerance', 'resilience', 'patterns']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Quando um serviço tá fora, ficar martelando ele com requisições só piora as coisas. O padrão circuit breaker ensina seu sistema quando parar de tentar e falhar graciosamente.'
+images: ['/static/images/circuit-breaker.png']
+---
+
+Já teve um serviço caindo e derrubando todo o resto junto? Falhas em cascata são horríveis. Seu serviço de pagamento falha, então seu serviço de pedidos fica tentando de novo, o que esgota seu pool de conexões, que derruba toda sua aplicação.
+
+O padrão circuit breaker previne isso.
+
+## A Analogia Elétrica
+
+Assim como disjuntores elétricos protegem sua casa de picos de energia, circuit breakers de software protegem seu sistema de falhas em cascata.
+
+```
+Fluxo normal de eletricidade → Pico detectado → Circuito ABRE → Sem mais danos
+Requisições normais → Falhas detectadas → Circuito ABRE → Sem mais requisições
+```
+
+## Estados do Circuit Breaker
+
+```
+        ┌─────────────────────┐
+        │       FECHADO       │ ← Operação normal
+        │  (requisições passam)│
+        └──────────┬──────────┘
+                   │ falhas > threshold
+                   ▼
+        ┌─────────────────────┐
+        │       ABERTO        │ ← Falha rápido
+        │(requisições bloqueadas)│
+        └──────────┬──────────┘
+                   │ timeout expira
+                   ▼
+        ┌─────────────────────┐
+        │    SEMI-ABERTO      │ ← Testando
+        │(requisições limitadas)│
+        └──────────┬──────────┘
+                   │ sucesso → FECHADO
+                   │ falha → ABERTO
+```
+
+### FECHADO (CLOSED)
+Estado normal. Requisições passam. Falhas são contadas.
+
+### ABERTO (OPEN)
+Circuito disparou. Requisições falham imediatamente sem chamar o serviço downstream. Isso dá tempo pro serviço com problema se recuperar.
+
+### SEMI-ABERTO (HALF-OPEN)
+Depois de um timeout, circuito permite um número limitado de requisições teste. Se elas passam, circuito fecha. Se falham, circuito abre de novo.
+
+## Implementação
+
+```python
+import time
+from enum import Enum
+from threading import Lock
+
+class CircuitState(Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+class CircuitBreaker:
+    def __init__(
+        self,
+        failure_threshold=5,
+        recovery_timeout=30,
+        half_open_max_calls=3
+    ):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.half_open_max_calls = half_open_max_calls
+
+        self.state = CircuitState.CLOSED
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.half_open_calls = 0
+        self.lock = Lock()
+
+    def call(self, func, *args, **kwargs):
+        with self.lock:
+            if self.state == CircuitState.OPEN:
+                if self._should_try_reset():
+                    self.state = CircuitState.HALF_OPEN
+                    self.half_open_calls = 0
+                else:
+                    raise CircuitOpenError("Circuito está aberto")
+
+            if self.state == CircuitState.HALF_OPEN:
+                if self.half_open_calls >= self.half_open_max_calls:
+                    raise CircuitOpenError("Circuito semi-aberto, máximo de calls atingido")
+                self.half_open_calls += 1
+
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise
+
+    def _should_try_reset(self):
+        return (
+            self.last_failure_time and
+            time.time() - self.last_failure_time >= self.recovery_timeout
+        )
+
+    def _on_success(self):
+        with self.lock:
+            if self.state == CircuitState.HALF_OPEN:
+                self.state = CircuitState.CLOSED
+            self.failure_count = 0
+
+    def _on_failure(self):
+        with self.lock:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+
+            if self.state == CircuitState.HALF_OPEN:
+                self.state = CircuitState.OPEN
+            elif self.failure_count >= self.failure_threshold:
+                self.state = CircuitState.OPEN
+```
+
+### Uso
+
+```python
+payment_circuit = CircuitBreaker(failure_threshold=5, recovery_timeout=30)
+
+def process_payment(order_id, amount):
+    try:
+        return payment_circuit.call(
+            payment_service.charge,
+            order_id,
+            amount
+        )
+    except CircuitOpenError:
+        # Fallback: enfileira pra processar depois
+        return queue_payment_for_retry(order_id, amount)
+```
+
+## Estratégias de Fallback
+
+Quando o circuito está aberto, o que você faz?
+
+### Retorna Dados do Cache
+```python
+def get_product(product_id):
+    try:
+        return circuit.call(product_service.get, product_id)
+    except CircuitOpenError:
+        return cache.get(f"product:{product_id}")  # Desatualizado mas disponível
+```
+
+### Retorna Valor Padrão
+```python
+def get_recommendations(user_id):
+    try:
+        return circuit.call(recommendation_service.get, user_id)
+    except CircuitOpenError:
+        return DEFAULT_RECOMMENDATIONS  # Recomendações genéricas
+```
+
+### Enfileira pra Depois
+```python
+def send_notification(user_id, message):
+    try:
+        return circuit.call(notification_service.send, user_id, message)
+    except CircuitOpenError:
+        queue.push({"user_id": user_id, "message": message})
+        return {"status": "enfileirado"}
+```
+
+### Falha Rápido
+```python
+def critical_operation():
+    try:
+        return circuit.call(critical_service.execute)
+    except CircuitOpenError:
+        raise ServiceUnavailableError("Por favor tente novamente mais tarde")
+```
+
+## Dicas de Configuração
+
+### Threshold de Falha
+- Muito baixo: Circuito abre em pequenos soluços
+- Muito alto: Não protege rápido o suficiente
+- Comece com 5-10 falhas
+
+### Timeout de Recuperação
+- Muito curto: Sobrecarrega serviço em recuperação
+- Muito longo: Mantém circuito aberto desnecessariamente
+- Comece com 30-60 segundos
+
+### Calls em Half-Open
+- Muito poucos: Demora pra recuperar
+- Muitos demais: Pode sobrecarregar serviço em recuperação
+- Comece com 1-3 calls
+
+## Bibliotecas
+
+Não implemente do zero em produção. Use bibliotecas testadas em batalha:
+
+**Python:**
+```python
+from circuitbreaker import circuit
+
+@circuit(failure_threshold=5, recovery_timeout=30)
+def call_external_service():
+    return requests.get("https://api.exemplo.com")
+```
+
+**Java (Resilience4j):**
+```java
+CircuitBreaker circuitBreaker = CircuitBreaker.ofDefaults("meuServico");
+String result = circuitBreaker.executeSupplier(() -> service.call());
+```
+
+**JavaScript (Opossum):**
+```javascript
+const CircuitBreaker = require('opossum');
+const breaker = new CircuitBreaker(asyncFunction, { timeout: 3000 });
+breaker.fire().then(console.log).catch(console.error);
+```
+
+## Monitoramento
+
+Você PRECISA monitorar seus circuit breakers:
+
+```python
+# Métricas Prometheus
+circuit_state = Gauge('circuit_state', 'Estado do circuit breaker', ['service'])
+circuit_failures = Counter('circuit_failures', 'Número de falhas', ['service'])
+circuit_opens = Counter('circuit_opens', 'Vezes que circuito abriu', ['service'])
+
+def update_metrics(circuit, service_name):
+    circuit_state.labels(service=service_name).set(
+        1 if circuit.state == CircuitState.OPEN else 0
+    )
+```
+
+Alerte em:
+- Circuito abrindo (serviço está falhando)
+- Circuito ficando aberto muito tempo (serviço não está se recuperando)
+- Alta taxa de falha mesmo quando fechado
+
+## Circuit Breaker vs Retry
+
+Eles trabalham juntos, não um contra o outro:
+
+```
+Requisição → Retry (lida com falhas transientes)
+          → Circuit Breaker (lida com falhas sustentadas)
+          → Serviço
+```
+
+```python
+@retry(max_attempts=3, backoff=exponential)
+@circuit(failure_threshold=5)
+def call_service():
+    return service.call()
+```
+
+## Erros Comuns
+
+1. **Não ter fallbacks:** Circuito abre, nada funciona
+2. **Compartilhar circuitos incorretamente:** Todos os endpoints usam mesmo circuito
+3. **Não monitorar:** Circuito está aberto e ninguém sabe
+4. **Thresholds muito agressivos:** Abre na primeira falha
+5. **Esquecer do half-open:** Circuito nunca se recupera
+
+---
+
+Circuit breakers são sua primeira linha de defesa contra falhas em cascata. São simples em conceito mas fazem uma diferença enorme na estabilidade em produção.
+
+Comece com configurações conservadoras, monitore de perto, e ajuste baseado nos seus padrões de falha específicos.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

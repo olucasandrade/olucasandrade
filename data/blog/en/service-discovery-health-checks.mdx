@@ -1,0 +1,726 @@
+---
+title: 'Service Discovery & Health Checks: How Services Find Each Other'
+date: '2025-01-29'
+language: en
+tags: ['system-design', 'microservices', 'infrastructure', 'devops']
+authors: ['lucas-andrade']
+draft: true
+summary: 'In a world of dynamic microservices, hardcoding IP addresses is a recipe for disaster. Service discovery solves how services find each other, and health checks make sure they are actually alive.'
+images: ['/static/images/service-discovery.png']
+---
+
+Ever tried to call a friend but their phone number changed and nobody told you? That's basically what happens in a microservices architecture without service discovery.
+
+Services come and go. They scale up, scale down, crash, restart, move to different machines. If your services are relying on hardcoded IPs and ports to talk to each other, you're going to have a bad time.
+
+## The Problem
+
+In a monolith, everything is in one place. Service A calls Service B by... calling a function. Easy.
+
+But in microservices:
+
+```
+Order Service needs to call:
+  - Payment Service (where is it?)
+  - Inventory Service (what port?)
+  - Notification Service (is it even running?)
+  - User Service (which instance?)
+```
+
+Now multiply that by dozens of services, each with multiple instances, across different servers, possibly in different regions. Things get messy fast.
+
+```
+┌──────────────┐     Where are you??     ┌──────────────┐
+│ Order Service │ ──────────────────────▶ │ ??? Service  │
+└──────────────┘                         └──────────────┘
+                                          IP changed
+                                          Port changed
+                                          Moved to another host
+                                          Scaled to 5 instances
+```
+
+## What is Service Discovery?
+
+Service discovery is the mechanism that lets services find each other dynamically. Instead of hardcoding addresses, services register themselves and query a registry to find other services.
+
+Think of it like a phone book that updates itself in real-time.
+
+```
+┌──────────────┐  1. Register    ┌────────────────────┐
+│ Payment Svc  │ ──────────────▶ │  Service Registry  │
+│ 10.0.1.5:8080│                 │                    │
+└──────────────┘                 │ payment → 10.0.1.5 │
+                                 │ orders  → 10.0.2.3 │
+┌──────────────┐  2. Discover    │ users   → 10.0.3.7 │
+│ Order Service│ ──────────────▶ │                    │
+│              │ ◀────────────── │ "payment is at     │
+└──────────────┘  3. Response    │  10.0.1.5:8080"    │
+                                 └────────────────────┘
+```
+
+## DNS-Based Discovery
+
+The simplest approach. Use DNS to resolve service names to IPs.
+
+### How it Works
+
+```
+Order Service wants to call Payment Service
+  → DNS lookup: payment-service.internal
+  → Returns: 10.0.1.5
+  → Make request to 10.0.1.5:8080
+```
+
+### DNS Round Robin
+
+DNS can return multiple IPs for load distribution:
+
+```
+$ dig payment-service.internal
+
+payment-service.internal. 30 IN A 10.0.1.5
+payment-service.internal. 30 IN A 10.0.1.6
+payment-service.internal. 30 IN A 10.0.1.7
+```
+
+### Pros and Cons
+
+**The good:**
+- Super simple, every language and framework supports DNS
+- No extra dependencies
+- Works everywhere
+
+**The bad:**
+- DNS caching can serve stale entries (TTL headaches)
+- No health checking built in
+- Limited metadata (just IP, no port or tags)
+- Slow propagation of changes
+
+**When to use:** Simple setups, when you don't need fast updates, or as a starting point before moving to something more robust.
+
+## Registry-Based Discovery
+
+A dedicated service registry that services register with and query.
+
+### The Big Players
+
+#### Consul (HashiCorp)
+
+Full-featured service mesh with discovery, health checks, and KV store.
+
+```hcl
+# Service registration in Consul
+service {
+  name = "payment-service"
+  port = 8080
+
+  tags = ["v1", "production"]
+
+  check {
+    http     = "http://localhost:8080/health"
+    interval = "10s"
+    timeout  = "3s"
+  }
+}
+```
+
+Querying services:
+
+```bash
+# DNS interface
+dig @127.0.0.1 -p 8600 payment-service.service.consul
+
+# HTTP API
+curl http://localhost:8500/v1/catalog/service/payment-service
+```
+
+```json
+[
+  {
+    "ServiceName": "payment-service",
+    "ServiceAddress": "10.0.1.5",
+    "ServicePort": 8080,
+    "ServiceTags": ["v1", "production"],
+    "ServiceMeta": {
+      "version": "1.2.3"
+    }
+  }
+]
+```
+
+#### etcd
+
+Distributed key-value store. Often used for service discovery in Kubernetes.
+
+```python
+import etcd3
+
+etcd = etcd3.client()
+
+# Register service
+etcd.put('/services/payment/instance-1', json.dumps({
+    'host': '10.0.1.5',
+    'port': 8080,
+    'version': '1.2.3'
+}))
+
+# Set a TTL (lease) - service must renew or it disappears
+lease = etcd.lease(30)  # 30-second TTL
+etcd.put('/services/payment/instance-1', data, lease=lease)
+
+# Discover service
+instances = []
+for value, metadata in etcd.get_prefix('/services/payment/'):
+    instances.append(json.loads(value))
+```
+
+#### Eureka (Netflix)
+
+Built for AWS, popular in the Spring ecosystem.
+
+```yaml
+# application.yml for a Spring Boot service
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://eureka-server:8761/eureka/
+  instance:
+    preferIpAddress: true
+    leaseRenewalIntervalInSeconds: 10
+    leaseExpirationDurationInSeconds: 30
+```
+
+```java
+// Discovering a service with Spring Cloud
+@Autowired
+private DiscoveryClient discoveryClient;
+
+public String getPaymentServiceUrl() {
+    List<ServiceInstance> instances =
+        discoveryClient.getInstances("payment-service");
+
+    // Pick one (or use load balancer)
+    ServiceInstance instance = instances.get(0);
+    return instance.getUri().toString();
+}
+```
+
+## Client-Side vs Server-Side Discovery
+
+This is a key architectural decision.
+
+### Client-Side Discovery
+
+The client queries the registry directly and decides which instance to call.
+
+```
+┌──────────┐  1. Query    ┌──────────┐
+│  Client  │ ───────────▶ │ Registry │
+│          │ ◀─────────── │          │
+│          │  2. List     └──────────┘
+│          │
+│          │  3. Choose + Call
+│          │ ───────────────────────▶ ┌──────────┐
+└──────────┘                         │ Service  │
+                                     └──────────┘
+```
+
+```python
+class ServiceClient:
+    def __init__(self, registry):
+        self.registry = registry
+
+    def call_payment_service(self, data):
+        # Get all healthy instances
+        instances = self.registry.get_instances("payment-service")
+
+        # Client decides (round robin, random, etc.)
+        instance = self.load_balance(instances)
+
+        return requests.post(
+            f"http://{instance.host}:{instance.port}/pay",
+            json=data
+        )
+
+    def load_balance(self, instances):
+        # Simple round robin
+        self.counter = getattr(self, 'counter', 0)
+        instance = instances[self.counter % len(instances)]
+        self.counter += 1
+        return instance
+```
+
+**The good:** Client has full control, can implement smart routing, no extra hop
+**The bad:** Every client needs discovery logic, couples clients to registry
+
+### Server-Side Discovery
+
+A load balancer sits between client and services. Client just calls the LB.
+
+```
+┌──────────┐         ┌───────────────┐  Query   ┌──────────┐
+│  Client  │ ──────▶ │ Load Balancer │ ───────▶ │ Registry │
+└──────────┘         │               │ ◀─────── │          │
+                     │               │          └──────────┘
+                     │     Route     │
+                     │───────────────│──────────▶ ┌──────────┐
+                     └───────────────┘            │ Service  │
+                                                  └──────────┘
+```
+
+**The good:** Client is simple, just calls one address. Discovery logic centralized.
+**The bad:** Extra network hop, load balancer becomes a critical component.
+
+**In practice:** Most cloud-native setups use server-side discovery. AWS ALB, Kubernetes Services, and Consul Connect all follow this pattern.
+
+## Kubernetes Service Discovery
+
+If you're running on K8s, you get service discovery for free. Seriously.
+
+### How it Works
+
+```yaml
+# Deploy a service
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  selector:
+    app: payment
+  ports:
+    - port: 80
+      targetPort: 8080
+```
+
+Now any pod in the cluster can reach it:
+
+```python
+# Just use the service name!
+response = requests.get("http://payment-service/pay")
+
+# Or with namespace
+response = requests.get("http://payment-service.production.svc.cluster.local/pay")
+```
+
+### DNS in Kubernetes
+
+K8s runs its own DNS server (CoreDNS). Every service gets a DNS entry:
+
+```
+<service-name>.<namespace>.svc.cluster.local
+```
+
+```bash
+# From any pod
+$ nslookup payment-service
+Server:    10.96.0.10
+Address:   10.96.0.10#53
+
+Name:    payment-service.default.svc.cluster.local
+Address: 10.100.200.15
+```
+
+### Service Types
+
+```yaml
+# ClusterIP (default) - internal only
+spec:
+  type: ClusterIP
+
+# NodePort - accessible from outside on a static port
+spec:
+  type: NodePort
+
+# LoadBalancer - provisions cloud load balancer
+spec:
+  type: LoadBalancer
+```
+
+### Endpoints
+
+K8s automatically tracks which pods back each service:
+
+```bash
+$ kubectl get endpoints payment-service
+NAME              ENDPOINTS                                AGE
+payment-service   10.244.1.5:8080,10.244.2.3:8080         5d
+```
+
+When pods come and go, endpoints update automatically. No manual registration needed.
+
+## Health Checks: Are You Actually Alive?
+
+Discovery is useless if you're routing traffic to dead instances. Health checks are how you verify services are actually working.
+
+### Liveness vs Readiness
+
+These are two different questions:
+
+**Liveness:** "Is the process alive?"
+- If NO: Kill it and restart
+- Example: process is deadlocked, stuck in infinite loop
+
+**Readiness:** "Can you handle traffic?"
+- If NO: Stop sending traffic, but don't kill it
+- Example: still loading data, warming up cache, waiting for DB connection
+
+```
+Liveness:  "Are you breathing?"    → No? CPR (restart)
+Readiness: "Can you work?"         → No? Take a break (remove from pool)
+```
+
+### Kubernetes Health Checks
+
+```yaml
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: payment-service
+      image: payment:latest
+      ports:
+        - containerPort: 8080
+
+      # Liveness: restart if this fails
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8080
+        initialDelaySeconds: 15
+        periodSeconds: 10
+        failureThreshold: 3
+
+      # Readiness: remove from service if this fails
+      readinessProbe:
+        httpGet:
+          path: /ready
+          port: 8080
+        initialDelaySeconds: 5
+        periodSeconds: 5
+        failureThreshold: 2
+
+      # Startup: give time for slow-starting apps
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: 8080
+        failureThreshold: 30
+        periodSeconds: 10
+```
+
+### Implementing Health Endpoints
+
+Here's what a good health check looks like:
+
+```python
+from flask import Flask, jsonify
+import redis
+import psycopg2
+
+app = Flask(__name__)
+
+@app.route('/healthz')
+def liveness():
+    """Am I alive? Keep it simple."""
+    return jsonify({"status": "alive"}), 200
+
+@app.route('/ready')
+def readiness():
+    """Can I handle traffic? Check dependencies."""
+    checks = {}
+
+    # Check database
+    try:
+        db = psycopg2.connect(DB_URL)
+        db.execute("SELECT 1")
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"failed: {str(e)}"
+        return jsonify({"status": "not ready", "checks": checks}), 503
+
+    # Check Redis
+    try:
+        r = redis.Redis.from_url(REDIS_URL)
+        r.ping()
+        checks["redis"] = "ok"
+    except Exception as e:
+        checks["redis"] = f"failed: {str(e)}"
+        return jsonify({"status": "not ready", "checks": checks}), 503
+
+    return jsonify({"status": "ready", "checks": checks}), 200
+```
+
+### Health Check Patterns
+
+#### Shallow Health Check
+
+Just checks if the process is responding.
+
+```python
+@app.route('/health')
+def health():
+    return {"status": "ok"}, 200
+```
+
+Fast but tells you almost nothing about actual health.
+
+#### Deep Health Check
+
+Checks all dependencies.
+
+```python
+@app.route('/health/deep')
+def deep_health():
+    results = {
+        "database": check_database(),
+        "cache": check_redis(),
+        "queue": check_rabbitmq(),
+        "disk": check_disk_space(),
+        "memory": check_memory_usage()
+    }
+
+    all_healthy = all(r["status"] == "ok" for r in results.values())
+
+    return {
+        "status": "healthy" if all_healthy else "degraded",
+        "checks": results
+    }, 200 if all_healthy else 503
+```
+
+More informative but slower and can cascade failures (if DB health check is slow, everything looks unhealthy).
+
+#### Dependency-Aware Health Check
+
+The sweet spot. Check only critical dependencies.
+
+```python
+@app.route('/health')
+def health():
+    critical = check_critical_deps()   # DB, cache
+    optional = check_optional_deps()   # Analytics, email
+
+    if not critical["healthy"]:
+        return {"status": "unhealthy", "critical": critical}, 503
+
+    if not optional["healthy"]:
+        return {"status": "degraded", "optional": optional}, 200
+
+    return {"status": "healthy"}, 200
+```
+
+## Self-Registration vs Third-Party Registration
+
+### Self-Registration
+
+Service registers itself when it starts up.
+
+```python
+class PaymentService:
+    def start(self):
+        # Start the service
+        self.server.start()
+
+        # Register with service registry
+        self.registry.register(
+            name="payment-service",
+            host=self.host,
+            port=self.port,
+            health_url=f"http://{self.host}:{self.port}/health"
+        )
+
+        # Send heartbeats
+        self.start_heartbeat()
+
+    def start_heartbeat(self):
+        """Periodically renew registration."""
+        while self.running:
+            self.registry.heartbeat("payment-service", self.instance_id)
+            time.sleep(10)
+
+    def stop(self):
+        # Deregister on shutdown
+        self.registry.deregister("payment-service", self.instance_id)
+        self.server.stop()
+```
+
+**The good:** Simple, service controls its own lifecycle
+**The bad:** Every service needs registration code, what if it crashes without deregistering?
+
+### Third-Party Registration
+
+An external process watches for services and registers them.
+
+```python
+# Registrar process (runs separately)
+class ServiceRegistrar:
+    def watch_docker_events(self):
+        for event in docker_client.events():
+            if event["status"] == "start":
+                container = docker_client.inspect(event["id"])
+                self.registry.register(
+                    name=container.labels["service-name"],
+                    host=container.ip,
+                    port=container.port
+                )
+            elif event["status"] == "die":
+                self.registry.deregister(event["id"])
+```
+
+This is what tools like **Registrator** and **Kubernetes** do.
+
+## Common Pitfalls
+
+### 1. Not Handling Registry Failures
+
+What happens when the registry itself goes down?
+
+```python
+def get_service(name):
+    try:
+        return registry.get_instances(name)
+    except RegistryUnavailable:
+        # Use cached results
+        return local_cache.get(name, [])
+```
+
+Always have a fallback. Cache the last known good state.
+
+### 2. Health Checks That Lie
+
+```python
+# BAD: always returns healthy
+@app.route('/health')
+def health():
+    return {"status": "ok"}, 200  # Even if everything is on fire
+```
+
+```python
+# GOOD: actually checks things
+@app.route('/health')
+def health():
+    if not can_connect_to_database():
+        return {"status": "unhealthy"}, 503
+    return {"status": "ok"}, 200
+```
+
+### 3. Thundering Herd on Recovery
+
+When a service comes back online, all cached connections hit it at once.
+
+```python
+# Add jitter to health check intervals
+import random
+
+check_interval = 10 + random.uniform(0, 5)  # 10-15 seconds
+```
+
+### 4. Missing Graceful Shutdown
+
+```python
+import signal
+
+def graceful_shutdown(signum, frame):
+    # 1. Mark as not ready (stop getting new traffic)
+    app.ready = False
+
+    # 2. Deregister from service registry
+    registry.deregister(service_id)
+
+    # 3. Wait for in-flight requests to finish
+    time.sleep(15)
+
+    # 4. Actually shut down
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, graceful_shutdown)
+```
+
+## Putting It All Together
+
+Here's a realistic service setup with Consul:
+
+```yaml
+# docker-compose.yml
+services:
+  consul:
+    image: consul:latest
+    ports:
+      - "8500:8500"
+    command: agent -server -bootstrap -ui
+
+  payment-service:
+    image: payment:latest
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+      SERVICE_NAME: payment
+      SERVICE_PORT: 8080
+
+  order-service:
+    image: order:latest
+    environment:
+      CONSUL_HTTP_ADDR: consul:8500
+      SERVICE_NAME: orders
+      SERVICE_PORT: 8080
+```
+
+```python
+# Shared service registration
+import consul
+import atexit
+
+def register_service():
+    c = consul.Consul(host='consul')
+
+    service_id = f"{SERVICE_NAME}-{HOSTNAME}"
+
+    c.agent.service.register(
+        name=SERVICE_NAME,
+        service_id=service_id,
+        address=HOST_IP,
+        port=int(SERVICE_PORT),
+        check=consul.Check.http(
+            f"http://{HOST_IP}:{SERVICE_PORT}/health",
+            interval="10s",
+            timeout="5s",
+            deregister="30s"  # Remove if unhealthy for 30s
+        )
+    )
+
+    # Deregister on exit
+    atexit.register(lambda: c.agent.service.deregister(service_id))
+
+def discover_service(name):
+    c = consul.Consul(host='consul')
+    _, services = c.health.service(name, passing=True)
+
+    return [
+        {
+            "host": svc["Service"]["Address"],
+            "port": svc["Service"]["Port"]
+        }
+        for svc in services
+    ]
+```
+
+## Quick Comparison
+
+| Feature | DNS | Consul | etcd | Eureka | K8s |
+|---------|-----|--------|------|--------|-----|
+| Health Checks | No | Yes | Manual | Yes | Yes |
+| KV Store | No | Yes | Yes | No | ConfigMaps |
+| Multi-DC | Limited | Yes | Yes | Yes | Federation |
+| Setup Complexity | Low | Medium | Medium | Medium | High (cluster) |
+| Best For | Simple | Full mesh | K8s backend | Spring | K8s native |
+
+---
+
+Service discovery is one of those things that seems unnecessary until you're debugging why your Order Service is still calling a Payment Service instance that died 10 minutes ago.
+
+Start simple. If you're on Kubernetes, you already have service discovery built in. If you're running your own infrastructure, Consul is a solid choice. And wherever you are, don't skip health checks.
+
+The key insight: in dynamic environments, the network is not static. Your infrastructure needs to adapt, and service discovery is how you make that happen.
+
+Questions? Drop them in the comments!
+
+Until next time!

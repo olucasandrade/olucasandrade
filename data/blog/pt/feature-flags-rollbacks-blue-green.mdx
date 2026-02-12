@@ -1,0 +1,399 @@
+---
+title: 'Feature Flags, Rollbacks e Blue-Green Deploys'
+date: '2025-02-05'
+language: pt
+tags: ['system-design', 'devops', 'deployment', 'reliability']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Deploy em produção não precisa ser aterrorizante. Feature flags, blue-green deploys e canary releases te dão controle sobre como e quando usuários veem código novo. Vou te mostrar como fazer deploy com confiança.'
+images: ['/static/images/system_design.webp']
+---
+
+Já mandou código pra produção numa sexta e se arrependeu imediatamente? Todo mundo já passou por isso. O deploy sai, algo quebra, usuários reclamando, e você desesperado tentando descobrir como desfazer tudo.
+
+A real é que **deploy não precisa ser assustador**. Com as estratégias certas, você pode mandar código com confiança, controlar quem vê o quê, e fazer rollback em segundos quando algo der errado.
+
+Bora falar sobre as ferramentas que tornam isso possível.
+
+## O Problema dos Deploys "Big Bang"
+
+Deploy tradicional é assim:
+
+```
+1. Escreve código por 3 meses
+2. Testa tudo (tomara)
+3. Faz deploy de tudo de uma vez numa terça às 2h da manhã
+4. Reza
+5. Quando quebra, pânico
+```
+
+Essa é a abordagem "big bang", e é péssima. Você tá fazendo deploy de um monte de mudanças, então quando algo quebra, boa sorte descobrindo qual mudança causou.
+
+Estratégias modernas de deploy viram isso de cabeça pra baixo.
+
+## Feature Flags
+
+Feature flags (ou feature toggles) permitem que você faça deploy de código sem liberá-lo. O código tá em produção, mas escondido atrás de uma flag que você controla.
+
+```python
+# Verificação simples de feature flag
+def get_checkout_page(user):
+    if feature_flags.is_enabled("new_checkout", user):
+        return render_new_checkout(user)
+    else:
+        return render_old_checkout(user)
+```
+
+### Por que Isso É Poderoso
+
+1. **Deploy a qualquer hora:** Código tá em produção mas invisível
+2. **Rollout gradual:** Habilita pra 1% dos usuários, depois 5%, depois 25%, depois 100%
+3. **Rollback instantâneo:** Desliga a flag, pronto
+4. **Teste A/B:** Mostra experiências diferentes pra usuários diferentes
+
+### Tipos de Feature Flags
+
+```
+Release Flags      → Controla rollout de feature (temporário)
+Experiment Flags   → Teste A/B (temporário)
+Ops Flags          → Kill switches pra shedding de carga (semi-permanente)
+Permission Flags   → Features premium pra usuários específicos (permanente)
+```
+
+### Implementação
+
+Um sistema básico de feature flags:
+
+```python
+class FeatureFlagService:
+    def __init__(self, config_store):
+        self.store = config_store
+
+    def is_enabled(self, flag_name, user=None):
+        flag = self.store.get(flag_name)
+
+        if not flag or not flag.get("enabled"):
+            return False
+
+        # Verifica rollout por porcentagem
+        if "percentage" in flag:
+            user_hash = hash(f"{flag_name}:{user.id}") % 100
+            return user_hash < flag["percentage"]
+
+        # Verifica lista de usuários permitidos
+        if "allowed_users" in flag:
+            return user.id in flag["allowed_users"]
+
+        return True
+
+
+# Uso
+flags = FeatureFlagService(redis_store)
+
+# Habilita pra 10% dos usuários
+flags.store.set("new_checkout", {
+    "enabled": True,
+    "percentage": 10
+})
+
+# Habilita pra usuários específicos (teste interno)
+flags.store.set("new_checkout", {
+    "enabled": True,
+    "allowed_users": ["dev-team-1", "dev-team-2"]
+})
+```
+
+### Estratégia de Rollout Progressivo
+
+```
+Dia 1: Só time interno (allowed_users)
+Dia 2: 1% dos usuários (percentage: 1)
+Dia 3: 5% dos usuários (percentage: 5)
+Dia 5: 25% dos usuários (percentage: 25)
+Dia 7: 50% dos usuários (percentage: 50)
+Dia 10: 100% (remove flag, limpa o código)
+```
+
+Monitore taxas de erro, latência e feedback dos usuários em cada estágio. Se algo parecer errado, volta atrás.
+
+### Serviços de Feature Flags
+
+Não construa o seu pra produção. Use:
+- **LaunchDarkly** - padrão da indústria, SDKs ótimas
+- **Unleash** - alternativa open source
+- **Flagsmith** - open source com opção cloud
+- **AWS AppConfig** - se você já tá na AWS
+- **Split** - feature flags + experimentação
+
+## Blue-Green Deployments
+
+Blue-green é simples: você tem dois ambientes de produção idênticos. Um é "blue" (ativo), outro é "green" (parado).
+
+```
+                    ┌──────────────┐
+Users ──→ LB ──→   │   BLUE (v1)  │  ← Atualmente ativo
+                    └──────────────┘
+                    ┌──────────────┐
+                    │  GREEN (v2)  │  ← Deploy aqui, testa
+                    └──────────────┘
+```
+
+### O Processo
+
+```
+Passo 1: Blue tá servindo tráfego (versão atual)
+Passo 2: Deploy da versão nova no Green
+Passo 3: Testa Green completamente (smoke tests, health checks)
+Passo 4: Muda load balancer pra apontar pro Green
+Passo 5: Green agora tá ativo, Blue fica parado
+
+         ┌──────────────┐
+         │   BLUE (v1)  │  ← Agora parado (mantém como rollback)
+         └──────────────┘
+         ┌──────────────┐
+Users →  │  GREEN (v2)  │  ← Agora servindo tráfego
+         └──────────────┘
+```
+
+### Rollback
+
+Algo errado? Volta pro Blue. Leva segundos.
+
+```
+# Exemplo NGINX: muda upstream
+upstream backend {
+    # Muda qual servidor tá ativo
+    server green.internal:8080;  # Comenta isso pra rollback
+    # server blue.internal:8080;  # Descomenta isso pra rollback
+}
+```
+
+Na prática com AWS ou Kubernetes:
+
+```bash
+# AWS: Muda target group
+aws elbv2 modify-listener --listener-arn $LISTENER_ARN \
+    --default-actions Type=forward,TargetGroupArn=$BLUE_TG_ARN
+
+# Kubernetes: Muda service selector
+kubectl patch service myapp -p '{"spec":{"selector":{"version":"v1"}}}'
+```
+
+### Prós e Contras
+
+**Prós:**
+- Deploys sem downtime
+- Rollback instantâneo
+- Teste completo em ambiente igual ao de produção
+
+**Contras:**
+- Dobro do custo de infraestrutura
+- Migrações de banco são complicadas (ambas versões precisam funcionar com o mesmo DB)
+- Gerenciamento de sessão precisa ser stateless
+
+## Canary Deployments
+
+Canary é tipo blue-green, mas mais gradual. Ao invés de mudar 100% do tráfego de uma vez, você manda uma porcentagem pequena pra versão nova primeiro.
+
+```
+              ┌──────────────┐
+         95%  │   Atual      │
+Users ──→ LB─┤   (v1)       │
+         5%  │              │
+              └──────────────┘
+              ┌──────────────┐
+              │   Canary     │
+              │   (v2)       │
+              └──────────────┘
+```
+
+### Shifting Gradual de Tráfego
+
+```yaml
+# Kubernetes Ingress com traffic splitting
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myapp
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "5"
+spec:
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /
+            backend:
+              service:
+                name: myapp-canary
+                port:
+                  number: 80
+```
+
+### Canary Automatizado com Métricas
+
+```python
+def canary_deploy(service, new_version):
+    stages = [5, 10, 25, 50, 75, 100]
+
+    for percentage in stages:
+        set_traffic_weight(service, new_version, percentage)
+        print(f"Canary em {percentage}%")
+
+        # Espera e verifica métricas
+        time.sleep(300)  # 5 minutos
+
+        metrics = get_metrics(service, new_version)
+
+        if metrics.error_rate > 1.0:  # > 1% erros
+            print(f"Taxa de erro muito alta: {metrics.error_rate}%")
+            rollback(service)
+            return False
+
+        if metrics.p99_latency > 500:  # > 500ms
+            print(f"Latência muito alta: {metrics.p99_latency}ms")
+            rollback(service)
+            return False
+
+    print("Deploy canary bem sucedido!")
+    return True
+```
+
+## Rolling Deployments
+
+Atualiza instâncias uma de cada vez (ou em lotes). A estratégia mais simples pro Kubernetes.
+
+```
+Instância 1: v1 → v2 (atualizada)
+Instância 2: v1           (ainda antiga)
+Instância 3: v1           (ainda antiga)
+Instância 4: v1           (ainda antiga)
+
+Depois...
+
+Instância 1: v2 (atualizada)
+Instância 2: v1 → v2 (atualizando)
+Instância 3: v1           (ainda antiga)
+Instância 4: v1           (ainda antiga)
+```
+
+```yaml
+# Kubernetes rolling update
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1  # No máximo 1 pod fora durante update
+      maxSurge: 1         # No máximo 1 pod extra durante update
+```
+
+## Estratégias de Rollback
+
+### Rollback Automatizado
+
+```python
+def deploy_with_auto_rollback(service, version):
+    previous_version = get_current_version(service)
+
+    deploy(service, version)
+
+    # Loop de health check
+    for i in range(10):
+        time.sleep(30)
+        health = check_health(service)
+
+        if not health.is_healthy:
+            print(f"Não saudável! Voltando pra {previous_version}")
+            deploy(service, previous_version)
+            alert_team(f"Auto-rollback: {service} de {version} pra {previous_version}")
+            return False
+
+    return True
+```
+
+### Considerações de Rollback de Banco de Dados
+
+É aqui que complica. Você pode fazer rollback de código fácil, mas migrações de banco? Nem tanto.
+
+**Regra: Faça migrações compatíveis com versões anteriores.**
+
+```sql
+-- BOM: Migração aditiva (fácil fazer rollback do código)
+ALTER TABLE users ADD COLUMN nickname VARCHAR(100);
+-- Código antigo ignora a coluna nova, sem problema
+
+-- RUIM: Migração destrutiva (não dá pra fazer rollback do código)
+ALTER TABLE users DROP COLUMN email;
+-- Código antigo espera a coluna email, rollback falha!
+```
+
+**O padrão expand-contract:**
+
+```
+Fase 1 (Expandir): Adiciona coluna nova, mantém a antiga
+Fase 2 (Migrar): Escreve nas duas, lê da nova
+Fase 3 (Contrair): Remove coluna antiga (depois que todo código usa a nova)
+```
+
+## Comparando Estratégias
+
+```
+Estratégia      │ Velocidade     │ Risco   │ Custo Infra  │ Complexidade
+                │ de Rollback    │         │              │
+────────────────┼────────────────┼─────────┼──────────────┼─────────────
+Big Bang        │ Lento (redeploy)│ Alto   │ Baixo        │ Baixa
+Blue-Green      │ Instantâneo    │ Baixo   │ 2x           │ Média
+Canary          │ Rápido         │ Muito   │ +pequeno %   │ Alta
+                │                │ Baixo   │              │
+Rolling         │ Médio          │ Médio   │ Mesmo        │ Baixa
+Feature Flags   │ Instantâneo    │ Muito   │ Mesmo        │ Média
+                │                │ Baixo   │              │
+```
+
+## Boas Práticas
+
+1. **Combine estratégias:** Feature flags + canary deploys = segurança máxima
+2. **Automatize tudo:** Deploys manuais são propensos a erro
+3. **Monitore agressivamente:** Se você não pode medir, não pode pegar
+4. **Pratique rollbacks:** Não espere um incidente real pra tentar fazer rollback
+5. **Faça deploys serem chatos:** O melhor deploy é aquele que ninguém percebe
+
+```python
+# O pipeline de deploy ideal
+def deploy_pipeline(service, version):
+    # 1. Feature flag pro comportamento novo
+    enable_flag("new_feature", percentage=0)
+
+    # 2. Canary deploy do código
+    canary_deploy(service, version)
+
+    # 3. Habilita gradualmente a feature
+    for pct in [1, 5, 10, 25, 50, 100]:
+        enable_flag("new_feature", percentage=pct)
+        monitor_and_wait(minutes=30)
+
+    # 4. Limpa flag depois do rollout completo
+    remove_flag("new_feature")
+```
+
+## Erros Comuns
+
+1. **Não ter plano de rollback:** "A gente resolve" não é um plano
+2. **Dívida de feature flags:** Deixar flags antigas no código pra sempre
+3. **Não testar o caminho de rollback:** Rollback deve ser tão testado quanto o deploy
+4. **Ignorar compatibilidade de banco:** Rollback de código + DB incompatível = desastre
+5. **Fazer deploy na sexta:** Só... não. Sério.
+
+---
+
+Deploys seguros não são sobre evitar risco completamente. São sobre ter controle. Feature flags te dão um kill switch. Blue-green te dá uma rota de fuga. Canary te dá um aviso antecipado.
+
+Use eles juntos, e deploy vira só mais uma atividade de terça-feira ao invés de um evento estressante.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

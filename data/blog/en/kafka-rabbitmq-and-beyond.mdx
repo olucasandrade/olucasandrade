@@ -1,0 +1,241 @@
+---
+title: 'Kafka, RabbitMQ, and Beyond'
+date: '2025-01-23'
+language: en
+tags: ['system-design', 'kafka', 'rabbitmq', 'messaging']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Queues or streams? RabbitMQ or Kafka? These questions come up in every distributed system. Let me break down when to use each and what makes them different.'
+images: ['/static/images/kafka-rabbitmq.png']
+---
+
+So you've decided to go event-driven. Great! Now comes the fun part: choosing your message broker. And trust me, this decision matters more than you might think.
+
+Let's break down the two giants: RabbitMQ and Kafka.
+
+## The Fundamental Difference
+
+**RabbitMQ:** A message broker. Messages are delivered and deleted.
+
+**Kafka:** An event log. Events are stored and can be replayed.
+
+Think of it this way:
+- RabbitMQ is like a post office. Once you receive your mail, it's gone from the system.
+- Kafka is like a newspaper archive. You can read today's paper, yesterday's, or last year's.
+
+## RabbitMQ
+
+### How It Works
+
+```
+Producer → Exchange → Queue → Consumer
+
+Exchange types:
+- Direct: Route by exact key match
+- Fanout: Route to all queues
+- Topic: Route by pattern matching
+- Headers: Route by message headers
+```
+
+### When to Use
+
+- **Task queues:** Distribute work across workers
+- **RPC patterns:** Request-reply messaging
+- **Complex routing:** Different messages to different queues
+- **Message acknowledgment:** Guaranteed processing
+
+### Example
+
+```python
+import pika
+
+# Producer
+connection = pika.BlockingConnection(pika.ConnectionParameters('localhost'))
+channel = connection.channel()
+channel.queue_declare(queue='tasks')
+
+channel.basic_publish(
+    exchange='',
+    routing_key='tasks',
+    body='Process order 123'
+)
+
+# Consumer
+def callback(ch, method, properties, body):
+    print(f"Processing: {body}")
+    # Acknowledge after processing
+    ch.basic_ack(delivery_tag=method.delivery_tag)
+
+channel.basic_consume(queue='tasks', on_message_callback=callback)
+channel.start_consuming()
+```
+
+### Pros
+- Easy to set up and use
+- Flexible routing
+- Message acknowledgment built-in
+- Great for task distribution
+
+### Cons
+- Messages are deleted after consumption
+- Harder to replay events
+- Single consumer per message (by default)
+
+## Kafka
+
+### How It Works
+
+```
+Producer → Topic (partitioned) → Consumer Group
+
+Topic: orders
+├── Partition 0: [msg1, msg4, msg7...]
+├── Partition 1: [msg2, msg5, msg8...]
+└── Partition 2: [msg3, msg6, msg9...]
+
+Consumer Group A reads all partitions
+Consumer Group B also reads all partitions (independent)
+```
+
+### When to Use
+
+- **Event streaming:** Real-time data pipelines
+- **Event sourcing:** Store and replay events
+- **Log aggregation:** Centralize logs from many services
+- **High throughput:** Millions of messages per second
+
+### Example
+
+```python
+from kafka import KafkaProducer, KafkaConsumer
+import json
+
+# Producer
+producer = KafkaProducer(
+    bootstrap_servers='localhost:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
+
+producer.send('orders', {'order_id': '123', 'status': 'created'})
+
+# Consumer
+consumer = KafkaConsumer(
+    'orders',
+    bootstrap_servers='localhost:9092',
+    group_id='order-processors',
+    value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+)
+
+for message in consumer:
+    print(f"Processing: {message.value}")
+```
+
+### Pros
+- Events are stored (replay capability)
+- Multiple consumers can read same events
+- Incredible throughput
+- Built-in partitioning for scalability
+
+### Cons
+- More complex to set up
+- Needs ZooKeeper (or KRaft)
+- Ordering only guaranteed within partition
+
+## Key Differences
+
+| Feature | RabbitMQ | Kafka |
+|---------|----------|-------|
+| Model | Message queue | Event log |
+| Storage | Temporary | Persistent |
+| Throughput | Good (~50k/s) | Excellent (~1M/s) |
+| Replay | No | Yes |
+| Ordering | Per queue | Per partition |
+| Use case | Task distribution | Event streaming |
+
+## Partitioning in Kafka
+
+This is crucial to understand. Kafka partitions messages across multiple logs.
+
+```python
+# Same key = same partition = ordering guaranteed
+producer.send('orders', key=b'order-123', value={'status': 'created'})
+producer.send('orders', key=b'order-123', value={'status': 'paid'})
+producer.send('orders', key=b'order-123', value={'status': 'shipped'})
+# These will be in order because same key
+
+# Different keys might go to different partitions
+producer.send('orders', key=b'order-456', value={'status': 'created'})
+# This might be processed before order-123 events
+```
+
+## Consumer Groups
+
+Multiple instances of your service? Use consumer groups.
+
+```
+Topic: orders (3 partitions)
+
+Consumer Group: order-processors
+├── Instance 1: reads partition 0
+├── Instance 2: reads partition 1
+└── Instance 3: reads partition 2
+
+Each message is processed by exactly one instance.
+Scale by adding more partitions and instances.
+```
+
+## Idempotency and Reprocessing
+
+Since Kafka stores events, you might process the same event twice. Always design for this:
+
+```python
+def process_order(event):
+    order_id = event['order_id']
+
+    # Check if already processed
+    if redis.sismember('processed_orders', order_id):
+        return  # Skip
+
+    # Process
+    update_inventory(order_id)
+    send_email(order_id)
+
+    # Mark as processed
+    redis.sadd('processed_orders', order_id)
+```
+
+## Cloud Alternatives
+
+Don't want to manage infrastructure?
+
+| Provider | RabbitMQ-like | Kafka-like |
+|----------|---------------|------------|
+| AWS | Amazon MQ, SQS | Amazon MSK, Kinesis |
+| GCP | Cloud Tasks | Cloud Pub/Sub |
+| Azure | Service Bus | Event Hubs |
+
+## Decision Framework
+
+**Choose RabbitMQ when:**
+- You need complex routing logic
+- Messages should be processed once and forgotten
+- You want simpler operations
+- Task distribution is the main use case
+
+**Choose Kafka when:**
+- You need to replay events
+- Multiple services need the same events
+- You need very high throughput
+- Event sourcing or audit logs are important
+
+**Or use both!** Many systems use RabbitMQ for task queues and Kafka for event streaming.
+
+---
+
+The "Kafka vs RabbitMQ" debate is really a "streams vs queues" decision. They solve different problems, and understanding that is more important than picking a "winner."
+
+In the next article, we'll explore Pub/Sub patterns and delivery guarantees in more depth.
+
+Questions about choosing your message broker? Drop them in the comments!
+
+Until next time!

@@ -1,0 +1,272 @@
+---
+title: 'Pub/Sub & Message Brokers Explained'
+date: '2025-01-24'
+language: en
+tags: ['system-design', 'messaging', 'pubsub', 'architecture']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Pub/Sub is one of the most powerful patterns in distributed systems. Understanding delivery guarantees can save you from data loss or duplicate processing nightmares.'
+images: ['/static/images/pubsub.png']
+---
+
+You've heard about Pub/Sub, but what does it really mean? And more importantly, what's the deal with "at-least-once" vs "exactly-once" delivery?
+
+Let me break it down.
+
+## What is Pub/Sub?
+
+Pub/Sub (Publish/Subscribe) is a messaging pattern where:
+- **Publishers** send messages to a topic (not to specific receivers)
+- **Subscribers** receive messages from topics they're interested in
+- **Broker** handles the routing
+
+```
+Publisher A ─┐                    ┌─ Subscriber 1
+             │    ┌─────────┐    │
+Publisher B ─┼───►│  Topic  │────┼─ Subscriber 2
+             │    └─────────┘    │
+Publisher C ─┘                    └─ Subscriber 3
+```
+
+Key insight: Publishers and subscribers don't know about each other. The topic is the contract.
+
+## Pub/Sub vs Message Queue
+
+They're often confused, but they're different:
+
+**Message Queue (Point-to-Point):**
+```
+Producer → Queue → Consumer
+                   (one consumer gets the message)
+```
+
+**Pub/Sub (One-to-Many):**
+```
+Publisher → Topic → All Subscribers
+                    (all subscribers get the message)
+```
+
+Many systems support both patterns:
+- RabbitMQ: Queues + Fanout exchanges for Pub/Sub
+- Kafka: Consumer groups for Queue behavior, multiple groups for Pub/Sub
+- Cloud Pub/Sub: Native Pub/Sub with subscriptions
+
+## Delivery Guarantees
+
+This is where things get interesting (and tricky).
+
+### At-Most-Once
+
+Message is delivered zero or one time. Fire and forget.
+
+```
+Publisher → Broker → Subscriber
+                  ↓
+            (if fails, message lost)
+```
+
+**How it works:**
+1. Publisher sends message
+2. Broker immediately acknowledges
+3. Broker tries to deliver
+4. If delivery fails, message is lost
+
+**Use when:**
+- Message loss is acceptable
+- Performance is critical
+- Metrics, logs (losing one data point is fine)
+
+### At-Least-Once
+
+Message is delivered one or more times. Guaranteed delivery, possible duplicates.
+
+```
+Publisher → Broker → Subscriber
+                  ↓
+            (if fails, retry)
+                  ↓
+            (might deliver twice)
+```
+
+**How it works:**
+1. Publisher sends message
+2. Broker stores message
+3. Broker delivers to subscriber
+4. Subscriber processes and acknowledges
+5. If no ack, broker retries
+
+**Use when:**
+- You can't lose messages
+- You can handle duplicates (idempotent processing)
+- Most business events
+
+### Exactly-Once
+
+Message is delivered exactly one time. The holy grail.
+
+**The truth:** True exactly-once is really hard (some say impossible in distributed systems). What we get is "effectively exactly-once" through:
+- Idempotent processing
+- Transactional outbox
+- Deduplication
+
+**How Kafka does it:**
+```
+1. Producer sends with idempotent flag
+2. Broker deduplicates by producer ID + sequence number
+3. Consumer commits offset in same transaction as processing
+```
+
+## Implementing Idempotency
+
+Since at-least-once is the practical choice, you need idempotent consumers:
+
+```python
+def process_payment(event):
+    payment_id = event['payment_id']
+
+    # Option 1: Check database
+    existing = db.query("SELECT * FROM payments WHERE id = ?", payment_id)
+    if existing:
+        return  # Already processed
+
+    # Option 2: Use unique constraint
+    try:
+        db.execute("INSERT INTO payments (id, ...) VALUES (?, ...)", payment_id, ...)
+    except UniqueViolation:
+        return  # Already processed
+
+    # Option 3: Track in Redis
+    if not redis.setnx(f"processed:{payment_id}", "1"):
+        return  # Already processed
+
+    # Process payment
+    charge_customer(event)
+```
+
+## Message Ordering
+
+Another crucial concept. Is ordering guaranteed?
+
+### Global Ordering
+Every subscriber sees messages in the exact same order.
+- Very expensive
+- Usually single partition/queue
+
+### Partition Ordering
+Messages with the same key are ordered.
+- Kafka: Same partition key = same partition = ordered
+- Good enough for most cases
+
+```python
+# Orders for same customer will be in order
+kafka.send('orders', key=customer_id, value=order_data)
+```
+
+### No Ordering
+Messages might arrive in any order.
+- Most scalable
+- Simplest to implement
+
+## Dead Letter Queues (DLQ)
+
+What happens when a message can't be processed after multiple retries?
+
+```
+Main Queue → Consumer
+    ↓ (fails 3 times)
+Dead Letter Queue → Manual review / alerting
+```
+
+```python
+def process_with_dlq(message, max_retries=3):
+    retry_count = message.headers.get('retry_count', 0)
+
+    try:
+        process(message)
+    except Exception as e:
+        if retry_count < max_retries:
+            # Retry with incremented count
+            message.headers['retry_count'] = retry_count + 1
+            queue.requeue(message)
+        else:
+            # Send to DLQ
+            dlq.send(message, error=str(e))
+```
+
+## Fan-Out Pattern
+
+One event triggers multiple actions:
+
+```
+OrderCreated
+    ├─► Email Service (send confirmation)
+    ├─► Inventory Service (reserve items)
+    ├─► Analytics Service (track metrics)
+    └─► Notification Service (push notification)
+```
+
+Each service has its own subscription, processes independently.
+
+## Backpressure
+
+What if consumers can't keep up?
+
+**Without backpressure:**
+```
+Producer (1000/s) → Queue → Consumer (100/s)
+                    ↓
+              Queue grows forever
+                    ↓
+              💀 Out of memory
+```
+
+**With backpressure:**
+```
+Producer (1000/s) → Queue (full) → Producer slowed down
+                    ↓
+              Consumer catches up
+```
+
+Strategies:
+- **Drop:** Discard messages when queue is full
+- **Block:** Producer waits when queue is full
+- **Sample:** Only keep every Nth message
+
+## Cloud Pub/Sub Services
+
+### AWS SNS + SQS
+```
+Publisher → SNS Topic → SQS Queue 1 → Consumer 1
+                     → SQS Queue 2 → Consumer 2
+```
+
+### Google Cloud Pub/Sub
+```
+Publisher → Topic → Subscription 1 → Subscriber 1
+                 → Subscription 2 → Subscriber 2
+```
+
+### Azure Service Bus
+```
+Publisher → Topic → Subscription 1 → Consumer 1
+                 → Subscription 2 → Consumer 2
+```
+
+## Best Practices
+
+1. **Always use at-least-once with idempotency** - Safest default
+2. **Include message ID** - For deduplication
+3. **Set up DLQ** - Don't lose failed messages
+4. **Monitor lag** - Consumer falling behind is a problem
+5. **Use schema registry** - Versioned message formats
+6. **Plan for replay** - You will need to reprocess eventually
+
+---
+
+Pub/Sub seems simple on the surface but has a lot of depth. The key is understanding the trade-offs between delivery guarantees and choosing what fits your use case.
+
+Most of the time: at-least-once + idempotent consumers = good enough.
+
+Questions? Drop them in the comments!
+
+Until next time!

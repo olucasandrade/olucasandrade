@@ -3,7 +3,7 @@ const siteMetadata = {
   title: 'Lucas Andrade Blog',
   author: 'Lucas Andrade',
   headerTitle: 'Lucas Andrade',
-  description: 'Software Engineer sharing insights about tech',
+  description: 'Senior Backend Engineer at SCALIS sharing insights about Python, Go, Node.js, AWS, and system design',
   language: 'en',
   theme: 'system', // system, dark or light
   siteUrl: 'https://olucasandrade.dev',

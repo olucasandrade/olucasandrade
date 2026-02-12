@@ -1,0 +1,469 @@
+---
+title: 'Caching at the Database Layer (Redis, Memcached)'
+date: '2025-02-02'
+language: en
+tags: ['system-design', 'redis', 'caching', 'database']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Your database is the bottleneck. Again. Before you throw more hardware at it, let me show you how Redis, Memcached, and some clever database-level tricks can take the pressure off.'
+images: ['/static/images/system_design.webp']
+---
+
+We already talked about general caching strategies in a previous post. But there's a specific layer of caching that deserves its own deep dive: caching at the **database layer**.
+
+This is where most performance problems actually live. Your app servers can scale horizontally pretty easily, but your database? That's the bottleneck that keeps you up at night.
+
+Let's talk about the tools and techniques that can help.
+
+## Redis vs. Memcached: The Big Comparison
+
+These are the two most popular in-memory caching systems. Everyone asks "which one should I use?" so let's settle this.
+
+### Memcached: The Simple Speedster
+
+Memcached is a straightforward key-value cache. It does one thing and does it really well.
+
+```python
+import pymemcache
+from pymemcache.client import base
+
+client = base.Client(('localhost', 11211))
+
+# Set a value
+client.set('user:123', json.dumps({"name": "Lucas", "email": "lucas@example.com"}))
+
+# Get a value
+user = json.loads(client.get('user:123'))
+
+# Delete
+client.delete('user:123')
+
+# That's basically it. Set, get, delete.
+```
+
+**Memcached strengths:**
+- Dead simple. No learning curve.
+- Multi-threaded. Can use all CPU cores out of the box.
+- Excellent for simple key-value caching.
+- Low memory overhead per key.
+
+**Memcached limitations:**
+- Only strings. No data structures.
+- No persistence. Server restarts = data gone.
+- No replication. No clustering (natively).
+- No pub/sub, no scripting, no nothing fancy.
+
+### Redis: The Swiss Army Knife
+
+Redis is an in-memory data structure store. It's a cache, but it's also much more.
+
+```python
+import redis
+
+r = redis.Redis(host='localhost', port=6379)
+
+# Basic key-value (like Memcached)
+r.set('user:123', json.dumps({"name": "Lucas"}), ex=3600)
+r.get('user:123')
+
+# But also... hashes
+r.hset('user:123', mapping={"name": "Lucas", "email": "lucas@example.com", "visits": 0})
+r.hget('user:123', 'name')
+r.hincrby('user:123', 'visits', 1)  # atomic increment
+
+# Lists (queues)
+r.lpush('notifications:123', 'New comment on your post')
+r.rpop('notifications:123')  # FIFO queue
+
+# Sets
+r.sadd('user:123:tags', 'python', 'redis', 'system-design')
+r.sismember('user:123:tags', 'python')  # True
+
+# Sorted sets (leaderboards, ranking)
+r.zadd('leaderboard', {'player1': 100, 'player2': 85, 'player3': 92})
+r.zrevrange('leaderboard', 0, 2, withscores=True)  # Top 3
+
+# Pub/Sub
+r.publish('channel:updates', 'New data available')
+
+# TTL on anything
+r.expire('user:123', 3600)
+```
+
+**Redis strengths:**
+- Rich data structures (strings, hashes, lists, sets, sorted sets, streams)
+- Persistence options (RDB snapshots, AOF log)
+- Replication and clustering
+- Lua scripting for complex atomic operations
+- Pub/Sub messaging
+- Streams for event processing
+
+**Redis limitations:**
+- Single-threaded for commands (though I/O is multi-threaded since Redis 6)
+- More memory overhead per key than Memcached
+- More complex to operate
+
+### The Verdict
+
+| Feature | Memcached | Redis |
+|---------|-----------|-------|
+| Data types | Strings only | Strings, Hashes, Lists, Sets, Sorted Sets, Streams |
+| Persistence | No | Yes (RDB, AOF) |
+| Replication | No | Yes |
+| Clustering | Client-side only | Built-in |
+| Multi-threaded | Yes | Single-threaded (mostly) |
+| Memory efficiency | Better | Good |
+| Max value size | 1MB | 512MB |
+| Pub/Sub | No | Yes |
+| Scripting | No | Lua scripts |
+
+**Use Memcached** when you need simple, fast caching and nothing else. It's lighter weight and multi-threaded.
+
+**Use Redis** for basically everything else. Most teams choose Redis because even if you start with simple caching, you'll eventually want the extra features.
+
+## Query Caching
+
+The most direct way to cache database queries: store the result of expensive queries.
+
+```python
+import hashlib
+import json
+
+def cached_query(query, params, ttl=300):
+    # Create a unique cache key from the query + params
+    cache_key = f"query:{hashlib.md5(f'{query}:{params}'.encode()).hexdigest()}"
+
+    # Check cache
+    cached = redis.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
+    # Cache miss - run the query
+    result = database.execute(query, params)
+
+    # Store in cache
+    redis.set(cache_key, json.dumps(result), ex=ttl)
+
+    return result
+
+# Usage
+top_products = cached_query(
+    "SELECT * FROM products ORDER BY sales DESC LIMIT 10",
+    {},
+    ttl=600  # cache for 10 minutes
+)
+```
+
+### Smart Invalidation with Tags
+
+The tricky part is invalidating cached queries when underlying data changes.
+
+```python
+class TaggedCache:
+    def __init__(self, redis_client):
+        self.redis = redis_client
+
+    def set(self, key, value, tags, ttl=300):
+        self.redis.set(key, json.dumps(value), ex=ttl)
+        for tag in tags:
+            self.redis.sadd(f"tag:{tag}", key)
+
+    def get(self, key):
+        result = self.redis.get(key)
+        return json.loads(result) if result else None
+
+    def invalidate_tag(self, tag):
+        """Invalidate all cache entries with this tag."""
+        keys = self.redis.smembers(f"tag:{tag}")
+        if keys:
+            self.redis.delete(*keys)
+        self.redis.delete(f"tag:{tag}")
+
+cache = TaggedCache(redis)
+
+# Cache a product listing with tags
+cache.set(
+    "category:electronics:page1",
+    products,
+    tags=["products", "category:electronics"],
+    ttl=600
+)
+
+# When a product is updated, invalidate related caches
+def update_product(product_id, data):
+    database.update("products", product_id, data)
+    cache.invalidate_tag("products")  # All product caches
+    cache.invalidate_tag(f"product:{product_id}")  # Specific product
+```
+
+## Materialized Views
+
+A materialized view is like a pre-computed query result that the database maintains for you. Think of it as database-level caching.
+
+```sql
+-- Regular view (computed every time you query it)
+CREATE VIEW top_selling_products AS
+SELECT p.id, p.name, SUM(oi.quantity) as total_sold
+FROM products p
+JOIN order_items oi ON p.id = oi.product_id
+JOIN orders o ON oi.order_id = o.id
+WHERE o.created_at > NOW() - INTERVAL '30 days'
+GROUP BY p.id, p.name
+ORDER BY total_sold DESC;
+
+-- Materialized view (computed once, stored on disk)
+CREATE MATERIALIZED VIEW top_selling_products AS
+SELECT p.id, p.name, SUM(oi.quantity) as total_sold
+FROM products p
+JOIN order_items oi ON p.id = oi.product_id
+JOIN orders o ON oi.order_id = o.id
+WHERE o.created_at > NOW() - INTERVAL '30 days'
+GROUP BY p.id, p.name
+ORDER BY total_sold DESC;
+
+-- Query it like a table (super fast!)
+SELECT * FROM top_selling_products LIMIT 10;
+
+-- Refresh when data changes (manually or on a schedule)
+REFRESH MATERIALIZED VIEW top_selling_products;
+
+-- Refresh concurrently (no lock, but needs a unique index)
+REFRESH MATERIALIZED VIEW CONCURRENTLY top_selling_products;
+```
+
+**When to use materialized views:**
+- Expensive aggregate queries that don't need real-time data
+- Dashboard metrics, reports
+- Data that changes less frequently than it's read
+
+**When NOT to use:**
+- Data that must be real-time
+- Very large result sets (they take up disk space)
+- Frequently changing data (refresh cost too high)
+
+## Connection Pooling
+
+This isn't exactly caching, but it's a database-layer optimization that's so important I have to mention it. Opening a database connection is expensive. Connection pooling reuses connections instead of creating new ones.
+
+```python
+# BAD: New connection per request
+def get_user(user_id):
+    conn = psycopg2.connect(host="db.example.com", ...)  # Expensive!
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    conn.close()  # Thrown away
+    return user
+
+# GOOD: Connection pool
+from psycopg2 import pool
+
+connection_pool = pool.ThreadedConnectionPool(
+    minconn=5,    # minimum connections alive
+    maxconn=20,   # maximum connections
+    host="db.example.com",
+    database="myapp"
+)
+
+def get_user(user_id):
+    conn = connection_pool.getconn()  # Get from pool (fast!)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        return cur.fetchone()
+    finally:
+        connection_pool.putconn(conn)  # Return to pool (not closed)
+```
+
+For production, consider using **PgBouncer** (for PostgreSQL) or **ProxySQL** (for MySQL) as dedicated connection poolers:
+
+```
+App Server 1 ──┐
+App Server 2 ──┼──▶ PgBouncer (pool of 50 connections) ──▶ PostgreSQL
+App Server 3 ──┘
+```
+
+Instead of each app server maintaining its own connections, PgBouncer manages a shared pool. This is especially important when you have many app server instances.
+
+## Read Replicas as a Cache Layer
+
+Read replicas aren't just for redundancy. They're also a powerful caching layer for read-heavy workloads.
+
+```python
+import random
+
+class DatabaseRouter:
+    def __init__(self, primary, replicas):
+        self.primary = primary
+        self.replicas = replicas
+
+    def write(self, query, params):
+        """All writes go to primary."""
+        return self.primary.execute(query, params)
+
+    def read(self, query, params, consistency='eventual'):
+        """Reads can go to replicas."""
+        if consistency == 'strong':
+            # Must be up-to-date, read from primary
+            return self.primary.execute(query, params)
+        else:
+            # Can be slightly stale, use a replica
+            replica = random.choice(self.replicas)
+            return replica.execute(query, params)
+
+router = DatabaseRouter(
+    primary=connect("primary.db.example.com"),
+    replicas=[
+        connect("replica1.db.example.com"),
+        connect("replica2.db.example.com"),
+        connect("replica3.db.example.com"),
+    ]
+)
+
+# Product listing - eventual consistency is fine
+products = router.read("SELECT * FROM products WHERE category = %s", ("electronics",))
+
+# User just updated their profile - need strong consistency
+profile = router.read(
+    "SELECT * FROM users WHERE id = %s", (user_id,),
+    consistency='strong'
+)
+```
+
+### When to Route to Replicas
+
+```python
+# Good candidates for replica reads:
+# - Product catalogs
+# - Blog posts
+# - Search results
+# - Analytics queries
+# - Reports
+
+# Keep on primary:
+# - Reads immediately after writes (read-your-own-writes)
+# - Anything that needs to be 100% current
+# - Authentication checks (debatable)
+```
+
+## Cache Invalidation at the Database Layer
+
+We know cache invalidation is hard. Here are some practical strategies specifically for database caching.
+
+### Listen to Database Changes
+
+PostgreSQL has `LISTEN/NOTIFY` which can trigger cache invalidation:
+
+```sql
+-- Create a trigger that notifies on changes
+CREATE OR REPLACE FUNCTION notify_cache_invalidation()
+RETURNS TRIGGER AS $$
+BEGIN
+    PERFORM pg_notify('cache_invalidation',
+        json_build_object(
+            'table', TG_TABLE_NAME,
+            'operation', TG_OP,
+            'id', COALESCE(NEW.id, OLD.id)
+        )::text
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER products_cache_trigger
+AFTER INSERT OR UPDATE OR DELETE ON products
+FOR EACH ROW EXECUTE FUNCTION notify_cache_invalidation();
+```
+
+```python
+# Application listens for notifications
+import psycopg2
+import select
+
+conn = psycopg2.connect("dbname=myapp")
+conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+cur = conn.cursor()
+cur.execute("LISTEN cache_invalidation;")
+
+while True:
+    if select.select([conn], [], [], 5) != ([], [], []):
+        conn.poll()
+        while conn.notifies:
+            notify = conn.notifies.pop(0)
+            payload = json.loads(notify.payload)
+
+            # Invalidate relevant cache
+            if payload['table'] == 'products':
+                redis.delete(f"product:{payload['id']}")
+                redis.delete("products:all")
+                print(f"Invalidated cache for product {payload['id']}")
+```
+
+### Change Data Capture (CDC)
+
+For more robust solutions, use CDC tools like Debezium to stream database changes:
+
+```
+PostgreSQL ──▶ Debezium ──▶ Kafka ──▶ Cache Invalidation Service ──▶ Redis
+```
+
+This is what companies at scale use. Every change to the database automatically flows to the cache invalidation service.
+
+## Putting It All Together
+
+Here's how a production system might layer these caching strategies:
+
+```
+Request
+  │
+  ▼
+┌─────────────────────┐
+│ Application Cache   │  Redis: hot data, sessions, rate limits
+│ (Redis)             │  Hit rate: 85-95%
+└──────────┬──────────┘
+           │ cache miss
+           ▼
+┌─────────────────────┐
+│ Connection Pool     │  PgBouncer: 50 pooled connections
+│ (PgBouncer)         │
+└──────────┬──────────┘
+           │
+     ┌─────┴─────┐
+     │           │
+     ▼           ▼
+┌─────────┐ ┌─────────┐
+│ Primary │ │Replicas │  Read replicas for read-heavy queries
+│   DB    │ │  (3x)   │
+└─────────┘ └─────────┘
+     │
+     │  Materialized views for expensive aggregations
+     │  Updated every 15 minutes
+```
+
+### Performance Impact
+
+```
+Without caching:
+  Average query time: 50ms
+  Database QPS: 5,000 (at capacity)
+  p99 latency: 200ms
+
+With layered caching:
+  Redis hit: 1ms (85% of requests)
+  Replica read: 10ms (10% of requests)
+  Primary read: 50ms (5% of requests)
+  Effective avg latency: ~6ms
+  Database QPS needed: 750 (85% offloaded to Redis)
+```
+
+That's a massive improvement from layering these strategies together.
+
+---
+
+Database-layer caching is where you get the biggest bang for your buck when it comes to performance. Redis or Memcached in front of your database, connection pooling, read replicas, and materialized views can transform a struggling system into one that handles 10x the traffic without breaking a sweat.
+
+Start with the simple stuff: add Redis for your hottest queries, set up connection pooling, and add a read replica. You'll be amazed at the difference.
+
+Got questions about database caching? Want to share your own setup? Drop it in the comments!
+
+Until next time!

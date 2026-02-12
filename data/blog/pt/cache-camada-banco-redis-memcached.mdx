@@ -1,0 +1,510 @@
+---
+title: 'Cache na Camada de Banco de Dados (Redis, Memcached)'
+date: '2025-02-02'
+language: pt
+tags: ['system-design', 'redis', 'caching', 'database']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Seu banco de dados tá lento? Antes de escalar verticalmente ou shardar, coloca um cache na frente. Redis e Memcached podem reduzir a carga no banco em 90% e deixar suas queries voando. Vou te mostrar como.'
+images: ['/static/images/system_design.webp']
+---
+
+Já viu aquele dashboard que demora 8 segundos pra carregar? Aquela listagem de produtos que trava o banco toda vez que alguém acessa a home? Na maioria dos casos, a solução não é um banco maior ou mais réplicas. É **cache**.
+
+Cache na camada de banco é tipo ter a resposta na ponta da língua ao invés de ter que procurar no livro toda vez. O dado tá na memória, pronto pra ser servido em microsegundos.
+
+Bora entender como usar Redis e Memcached pra tirar pressão do banco e deixar seu sistema voando.
+
+## Redis vs Memcached
+
+Antes de mais nada, vamos esclarecer a diferença entre os dois.
+
+```
+                    Redis              Memcached
+──────────────────────────────────────────────────────
+Estruturas de dados Strings, Hashes,   Só strings
+                    Lists, Sets,
+                    Sorted Sets, etc.
+Persistência        Sim (RDB, AOF)     Não
+Replicação          Sim                Não (nativo)
+Pub/Sub             Sim                Não
+Lua scripting       Sim                Não
+Multi-threaded      Single-threaded*   Multi-threaded
+Memória             Mais overhead      Mais eficiente
+Complexidade        Mais features      Mais simples
+```
+
+*Redis 6+ tem I/O threads, mas o processamento de comandos ainda é single-threaded.
+
+### Quando Usar Cada Um
+
+```
+Redis quando:
+  ✓ Precisa de estruturas de dados ricas (sorted sets, hashes)
+  ✓ Quer persistência (sobrevive restart)
+  ✓ Precisa de pub/sub, streams
+  ✓ Quer usar como fila, sessão store, leaderboard
+  ✓ É o caso de uso mais geral
+
+Memcached quando:
+  ✓ Cache puro e simples (key-value string)
+  ✓ Escala horizontal simples (consistent hashing nativo)
+  ✓ Eficiência máxima de memória
+  ✓ Multi-threaded é importante
+  ✓ Cenário: cache de fragments de HTML, resultados de API
+```
+
+Na dúvida? **Vai de Redis.** É mais versátil e cobre 95% dos casos.
+
+## Cache de Queries
+
+O padrão mais comum: cachear o resultado de queries que são executadas frequentemente.
+
+### Cache-Aside (Lazy Loading)
+
+```python
+import redis
+import json
+
+r = redis.Redis(host='localhost', port=6379, decode_responses=True)
+
+def get_product(product_id):
+    cache_key = f"product:{product_id}"
+
+    # 1. Tenta no cache
+    cached = r.get(cache_key)
+    if cached:
+        return json.loads(cached)  # Cache HIT
+
+    # 2. Cache MISS: busca no banco
+    product = db.execute(
+        "SELECT * FROM products WHERE id = %s", [product_id]
+    ).fetchone()
+
+    if product:
+        # 3. Armazena no cache pra próxima vez
+        r.setex(cache_key, 3600, json.dumps(product))  # TTL de 1 hora
+
+    return product
+```
+
+```
+Fluxo:
+  Requisição → Cache HIT? → Sim → Retorna do cache (< 1ms)
+                          → Não → Busca no banco (~50ms)
+                                → Salva no cache
+                                → Retorna
+```
+
+### Write-Through
+
+Escreve no cache e no banco ao mesmo tempo.
+
+```python
+def update_product(product_id, data):
+    # 1. Atualiza no banco
+    db.execute(
+        "UPDATE products SET name=%s, price=%s WHERE id=%s",
+        [data["name"], data["price"], product_id]
+    )
+
+    # 2. Atualiza no cache (síncrono)
+    cache_key = f"product:{product_id}"
+    r.setex(cache_key, 3600, json.dumps(data))
+
+    return data
+```
+
+**Prós:** Cache sempre consistente com o banco.
+**Contras:** Escrita mais lenta (dois writes). Cacheia dados que podem nunca ser lidos.
+
+### Write-Behind (Write-Back)
+
+Escreve no cache primeiro, depois assincronamente no banco.
+
+```python
+def update_product_fast(product_id, data):
+    cache_key = f"product:{product_id}"
+
+    # 1. Escreve no cache (rápido!)
+    r.setex(cache_key, 3600, json.dumps(data))
+
+    # 2. Enfileira escrita pro banco (assíncrono)
+    write_queue.push({
+        "table": "products",
+        "id": product_id,
+        "data": data,
+        "timestamp": time.time()
+    })
+
+    return data  # Retorna imediatamente
+
+# Worker processa a fila em background
+def process_write_queue():
+    while True:
+        item = write_queue.pop()
+        db.execute(
+            "UPDATE products SET name=%s, price=%s WHERE id=%s",
+            [item["data"]["name"], item["data"]["price"], item["id"]]
+        )
+```
+
+**Prós:** Escrita super rápida pro cliente.
+**Contras:** Risco de perda de dados se o cache morrer antes de persistir.
+
+## Cache de Queries Complexas
+
+Nem toda query é um simples `SELECT * WHERE id = ?`. Queries complexas também podem ser cacheadas.
+
+```python
+def get_top_products(category, limit=20):
+    cache_key = f"top_products:{category}:{limit}"
+
+    cached = r.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
+    # Query pesada: JOIN + ORDER + LIMIT
+    products = db.execute("""
+        SELECT p.*, AVG(r.rating) as avg_rating, COUNT(r.id) as review_count
+        FROM products p
+        LEFT JOIN reviews r ON p.id = r.product_id
+        WHERE p.category = %s
+        GROUP BY p.id
+        ORDER BY avg_rating DESC, review_count DESC
+        LIMIT %s
+    """, [category, limit]).fetchall()
+
+    # Cache por 15 minutos (dados mudam, mas não precisa ser real-time)
+    r.setex(cache_key, 900, json.dumps(products))
+
+    return products
+```
+
+### Cache com Hash (Redis)
+
+Pra dados estruturados, Hashes do Redis são mais eficientes que serializar JSON inteiro.
+
+```python
+def cache_user_profile(user_id, profile):
+    key = f"user:{user_id}"
+
+    # Salva como hash: cada campo acessível individualmente
+    r.hset(key, mapping={
+        "name": profile["name"],
+        "email": profile["email"],
+        "plan": profile["plan"],
+        "avatar_url": profile["avatar_url"]
+    })
+    r.expire(key, 3600)
+
+def get_user_name(user_id):
+    # Pega SÓ o campo que precisa, sem carregar o objeto inteiro
+    return r.hget(f"user:{user_id}", "name")
+
+def get_user_plan(user_id):
+    return r.hget(f"user:{user_id}", "plan")
+```
+
+## Materialized Views
+
+Materialized views são views pré-calculadas que funcionam como cache no nível do banco.
+
+```sql
+-- PostgreSQL: Materialized View
+CREATE MATERIALIZED VIEW product_stats AS
+SELECT
+    p.id,
+    p.name,
+    p.category,
+    COUNT(o.id) as total_orders,
+    SUM(o.quantity) as total_sold,
+    AVG(r.rating) as avg_rating,
+    COUNT(r.id) as review_count
+FROM products p
+LEFT JOIN order_items o ON p.id = o.product_id
+LEFT JOIN reviews r ON p.id = r.product_id
+GROUP BY p.id, p.name, p.category;
+
+-- Consulta instantânea (lê da view materializada)
+SELECT * FROM product_stats WHERE category = 'electronics' ORDER BY avg_rating DESC;
+
+-- Atualiza a view (geralmente via cron ou trigger)
+REFRESH MATERIALIZED VIEW CONCURRENTLY product_stats;
+```
+
+```python
+# Automatizando refresh da materialized view
+import schedule
+
+def refresh_product_stats():
+    db.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY product_stats")
+    print(f"View atualizada em {datetime.now()}")
+
+# Atualiza a cada 5 minutos
+schedule.every(5).minutes.do(refresh_product_stats)
+```
+
+## Connection Pooling
+
+Não é cache de dados, mas é cache de **conexões**. Abrir conexão com banco é caro (~20-50ms). Com pool, você reutiliza conexões existentes.
+
+```python
+# Sem pool: abre e fecha conexão a cada query
+def get_user_slow(user_id):
+    conn = psycopg2.connect(host="db", dbname="app")  # ~30ms
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = %s", [user_id])  # ~5ms
+    result = cursor.fetchone()
+    conn.close()
+    return result
+# Total: ~35ms (86% é conexão!)
+
+# Com pool: reutiliza conexões
+from psycopg2 import pool
+
+connection_pool = pool.ThreadedConnectionPool(
+    minconn=5,       # Mínimo de conexões
+    maxconn=20,      # Máximo de conexões
+    host="db",
+    dbname="app"
+)
+
+def get_user_fast(user_id):
+    conn = connection_pool.getconn()  # ~0.1ms (pega do pool)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = %s", [user_id])  # ~5ms
+        return cursor.fetchone()
+    finally:
+        connection_pool.putconn(conn)  # Devolve pro pool
+# Total: ~5ms (6x mais rápido!)
+```
+
+### PgBouncer
+
+Pra ambientes maiores, use PgBouncer como pooler externo:
+
+```
+Sem PgBouncer:
+  100 servidores × 20 conexões = 2000 conexões no PostgreSQL 😰
+
+Com PgBouncer:
+  100 servidores × 20 conexões → PgBouncer → 50 conexões no PostgreSQL 😎
+
+PgBouncer faz multiplexação: muitas conexões "virtuais"
+são atendidas por poucas conexões reais.
+```
+
+## Read Replicas como Cache
+
+Read replicas servem dados levemente desatualizados, mas tiram MUITA carga do primário.
+
+```python
+class CachedDatabaseAccess:
+    def __init__(self, primary, replicas, redis_client):
+        self.primary = primary
+        self.replicas = replicas
+        self.redis = redis_client
+
+    def get_product(self, product_id):
+        # Nível 1: Redis (microsegundos)
+        cached = self.redis.get(f"product:{product_id}")
+        if cached:
+            return json.loads(cached)
+
+        # Nível 2: Read replica (milissegundos, pode estar levemente atrasada)
+        replica = random.choice(self.replicas)
+        product = replica.execute(
+            "SELECT * FROM products WHERE id = %s", [product_id]
+        ).fetchone()
+
+        if product:
+            self.redis.setex(f"product:{product_id}", 300, json.dumps(product))
+            return product
+
+        # Nível 3: Primary (último recurso)
+        return self.primary.execute(
+            "SELECT * FROM products WHERE id = %s", [product_id]
+        ).fetchone()
+```
+
+```
+Hierarquia de cache:
+
+Requisição
+    │
+    ▼
+Redis (L1)          ~0.5ms     Hit rate: ~85%
+    │ miss
+    ▼
+Read Replica (L2)   ~5ms       Hit rate: ~14%
+    │ miss
+    ▼
+Primary (L3)        ~10ms      Hit rate: ~1%
+
+Resultado: 85% das leituras nem chegam no banco!
+```
+
+## Invalidação de Cache
+
+O problema mais difícil de computação: **quando invalidar o cache?**
+
+### TTL (Time To Live)
+
+O jeito mais simples. Dado expira depois de X tempo.
+
+```python
+# TTL fixo
+r.setex("product:123", 3600, data)  # Expira em 1 hora
+
+# TTL variável baseado no tipo de dado
+ttl_config = {
+    "product": 3600,      # 1 hora (muda pouco)
+    "user_session": 1800,  # 30 min
+    "search_results": 300, # 5 min (muda frequentemente)
+    "exchange_rate": 60,   # 1 min (muda o tempo todo)
+}
+```
+
+### Invalidação Explícita
+
+Quando o dado muda, remove do cache imediatamente.
+
+```python
+def update_product(product_id, data):
+    # Atualiza no banco
+    db.execute("UPDATE products SET name=%s, price=%s WHERE id=%s",
+               [data["name"], data["price"], product_id])
+
+    # Invalida caches relacionados
+    r.delete(f"product:{product_id}")
+    r.delete(f"top_products:{data['category']}:*")  # Invalida listas que podem ter esse produto
+
+    # Ou publica evento pra outros serviços invalidarem seus caches
+    r.publish("cache_invalidation", json.dumps({
+        "entity": "product",
+        "id": product_id,
+        "action": "updated"
+    }))
+```
+
+### Cache Stampede Prevention
+
+Quando o cache expira e 1000 requisições simultâneas vão pro banco:
+
+```python
+import time
+import random
+
+def get_product_safe(product_id):
+    cache_key = f"product:{product_id}"
+    lock_key = f"lock:{cache_key}"
+
+    cached = r.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
+    # Tenta adquirir lock
+    if r.set(lock_key, "1", nx=True, ex=10):  # Lock por 10 segundos
+        try:
+            # Ganhou o lock: busca no banco e cacheia
+            product = db.execute(
+                "SELECT * FROM products WHERE id = %s", [product_id]
+            ).fetchone()
+            r.setex(cache_key, 3600, json.dumps(product))
+            return product
+        finally:
+            r.delete(lock_key)
+    else:
+        # Não ganhou o lock: outro processo tá buscando
+        # Espera um pouco e tenta o cache de novo
+        time.sleep(0.1 + random.uniform(0, 0.1))
+        cached = r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+        # Fallback: vai pro banco direto
+        return db.execute(
+            "SELECT * FROM products WHERE id = %s", [product_id]
+        ).fetchone()
+```
+
+## Padrões Avançados
+
+### Cache Warming
+
+Pré-carrega o cache antes de precisar.
+
+```python
+def warm_cache():
+    """Roda no deploy ou periodicamente"""
+
+    # Produtos mais acessados
+    popular_products = db.execute("""
+        SELECT p.* FROM products p
+        JOIN page_views pv ON p.id = pv.product_id
+        GROUP BY p.id
+        ORDER BY COUNT(pv.id) DESC
+        LIMIT 1000
+    """).fetchall()
+
+    pipe = r.pipeline()
+    for product in popular_products:
+        pipe.setex(
+            f"product:{product['id']}",
+            3600,
+            json.dumps(product)
+        )
+    pipe.execute()  # Executa tudo de uma vez
+
+    print(f"Cache aquecido com {len(popular_products)} produtos")
+```
+
+### Multi-Level Cache
+
+```python
+from functools import lru_cache
+
+# L0: Cache in-process (mais rápido possível)
+@lru_cache(maxsize=1000)
+def get_config(key):
+    return r.get(f"config:{key}")  # L1: Redis
+
+# L1: Redis
+# L2: Read Replica
+# L3: Primary DB
+
+# Cada nível é mais lento mas tem mais capacidade
+```
+
+## Métricas Importantes
+
+```python
+# Monitore essas métricas do cache
+
+# Hit Rate: % de requisições atendidas pelo cache
+hit_rate = cache_hits / (cache_hits + cache_misses) * 100
+# Bom: > 85%  |  Ótimo: > 95%  |  Ruim: < 70%
+
+# Latência média por camada
+# Redis: < 1ms
+# Banco com cache: < 10ms
+# Banco sem cache: 50-200ms
+
+# Memory usage
+info = r.info("memory")
+used = info["used_memory_human"]
+# Monitore pra não estourar
+```
+
+---
+
+Cache na camada de banco é provavelmente a otimização com melhor custo-benefício que existe. Um Redis de $30/mês pode evitar que você precise de um banco de $300/mês.
+
+Comece simples: cache-aside com TTL nos endpoints mais acessados. Meça o hit rate. Se tá acima de 80%, você já tá economizando muito. Aí vai refinando: invalidação explícita, cache warming, multi-level.
+
+E lembra: "There are only two hard things in Computer Science: cache invalidation and naming things." Essa frase do Phil Karlton é bem real.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

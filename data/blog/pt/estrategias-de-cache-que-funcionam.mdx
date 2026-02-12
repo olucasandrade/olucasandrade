@@ -1,0 +1,357 @@
+---
+title: 'Estratégias de Cache que Realmente Funcionam'
+date: '2025-01-20'
+language: pt
+tags: ['system-design', 'caching', 'performance', 'redis']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Cache é o truque mais antigo pra deixar sistemas mais rápidos. Mas tem muito mais coisa do que só "guardar dados na memória." Vou te mostrar as estratégias que realmente funcionam em produção.'
+images: ['/static/images/caching.png']
+---
+
+Tem uma piada antiga em ciência da computação: "Existem apenas duas coisas difíceis em ciência da computação: invalidação de cache e nomear coisas."
+
+E honestamente? Não é bem uma piada. Cache é simples em conceito mas complicado na prática. Bora destrinchar as estratégias que realmente funcionam.
+
+## Por que Cachear?
+
+A ideia é simples: ler da memória é muito mais rápido do que ler do disco ou da rede.
+
+```
+Acesso à memória:    ~100 nanossegundos
+Acesso ao SSD:       ~100 microssegundos (1000x mais lento)
+Chamada de rede:     ~100 milissegundos (1.000.000x mais lento)
+```
+
+Então se você consegue guardar dados acessados frequentemente na memória, você economiza um tempão.
+
+## Camadas de Cache
+
+Numa aplicação web típica, você tem vários lugares onde cache pode acontecer:
+
+```
+Usuário → Cache do Browser → CDN → Cache da Aplicação → Cache do Banco → Banco de Dados
+```
+
+Cada camada tem suas características:
+
+| Camada | Velocidade | Escopo | Controle |
+|--------|------------|--------|----------|
+| Browser | Mais rápido | Por usuário | Limitado |
+| CDN | Muito rápido | Global | Médio |
+| Aplicação (Redis) | Rápido | Compartilhado | Total |
+| Banco de Dados | Médio | Por query | Limitado |
+
+## Padrões de Cache
+
+### 1. Cache-Aside (Lazy Loading)
+
+O padrão mais comum. A aplicação gerencia o cache explicitamente.
+
+```python
+def get_user(user_id):
+    # Tenta o cache primeiro
+    cached = cache.get(f"user:{user_id}")
+    if cached:
+        return cached
+
+    # Cache miss - busca do banco
+    user = database.query(f"SELECT * FROM users WHERE id = {user_id}")
+
+    # Guarda no cache pra próxima vez
+    cache.set(f"user:{user_id}", user, ttl=3600)  # 1 hora
+
+    return user
+```
+
+**Prós:**
+- Só cacheia dados que são realmente requisitados
+- Falhas de cache não quebram a aplicação (só fica mais lento)
+
+**Contras:**
+- Primeira requisição sempre é lenta (cache miss)
+- Dados podem ficar desatualizados
+
+### 2. Write-Through
+
+Toda escrita vai tanto pro cache quanto pro banco.
+
+```python
+def update_user(user_id, data):
+    # Atualiza o banco
+    database.update("users", user_id, data)
+
+    # Atualiza o cache imediatamente
+    cache.set(f"user:{user_id}", data, ttl=3600)
+
+    return data
+```
+
+**Prós:**
+- Cache sempre atualizado
+- Sem problemas de dados desatualizados
+
+**Contras:**
+- Escritas são mais lentas (duas operações)
+- Cache pode ter dados que nunca são lidos
+
+### 3. Write-Behind (Write-Back)
+
+Escritas vão pro cache primeiro, depois de forma assíncrona pro banco.
+
+```python
+def update_user(user_id, data):
+    # Atualiza o cache imediatamente
+    cache.set(f"user:{user_id}", data)
+
+    # Enfileira escrita no banco pra depois
+    write_queue.push({"table": "users", "id": user_id, "data": data})
+
+    return data
+
+# Worker em background processa a fila
+def process_writes():
+    while True:
+        write = write_queue.pop()
+        database.update(write["table"], write["id"], write["data"])
+```
+
+**Prós:**
+- Escritas super rápidas
+- Pode agrupar escritas no banco
+
+**Contras:**
+- Risco de perda de dados se cache falha antes da escrita no banco
+- Complexo de implementar corretamente
+
+### 4. Read-Through
+
+Cache lida com buscar do banco automaticamente.
+
+```python
+# Com um cache read-through, você só faz:
+user = cache.get(f"user:{user_id}")
+# Cache automaticamente busca do banco no miss
+```
+
+Isso geralmente é implementado pela própria camada de cache (como algumas configurações do Redis).
+
+## Estratégias de Invalidação de Cache
+
+É aqui que as coisas ficam complicadas. Como você mantém o cache sincronizado com seus dados?
+
+### Baseado em Tempo (TTL)
+
+Define um tempo de expiração e aceita que os dados podem estar levemente desatualizados.
+
+```python
+cache.set("produtos_populares", produtos, ttl=300)  # 5 minutos
+```
+
+**Bom pra:**
+- Dados que podem estar levemente desatualizados (listagens de produtos, estatísticas)
+- Dados de alto tráfego onde frescor não é crítico
+
+### Baseado em Eventos
+
+Invalida o cache quando os dados mudam.
+
+```python
+def update_product(product_id, data):
+    database.update("products", product_id, data)
+
+    # Invalida cache específico
+    cache.delete(f"product:{product_id}")
+
+    # Invalida caches relacionados
+    cache.delete("produtos_populares")
+    cache.delete(f"categoria:{data['category_id']}")
+```
+
+**Bom pra:**
+- Dados que precisam estar frescos
+- Quando você controla todos os caminhos de escrita
+
+### Baseado em Versão
+
+Inclui uma versão na chave do cache.
+
+```python
+def get_config():
+    version = cache.get("config_version") or 1
+    cached = cache.get(f"config:v{version}")
+
+    if cached:
+        return cached
+
+    config = database.get_config()
+    cache.set(f"config:v{version}", config)
+    return config
+
+def update_config(new_config):
+    database.update_config(new_config)
+    cache.incr("config_version")  # Incrementa versão, cache antigo ignorado
+```
+
+## O Problema do Cache Stampede
+
+Esse é um problema clássico. Imagina:
+
+1. Cache expira
+2. 1000 requisições chegam ao mesmo tempo
+3. Todas as 1000 veem cache miss
+4. Todas as 1000 consultam o banco simultaneamente
+5. Banco morre
+
+### Soluções
+
+**Locking:**
+```python
+def get_data_with_lock(key):
+    cached = cache.get(key)
+    if cached:
+        return cached
+
+    # Tenta adquirir lock
+    lock_acquired = cache.set(f"lock:{key}", "1", nx=True, ttl=10)
+
+    if lock_acquired:
+        # Eu ganhei o lock, busco os dados
+        data = query_cara_no_banco()
+        cache.set(key, data, ttl=3600)
+        cache.delete(f"lock:{key}")
+        return data
+    else:
+        # Alguém já tá buscando, espera e tenta de novo
+        time.sleep(0.1)
+        return get_data_with_lock(key)
+```
+
+**Expiração Antecipada Probabilística:**
+```python
+def get_with_early_expire(key, ttl=3600, beta=1):
+    cached, expiry = cache.get_with_expiry(key)
+
+    if cached:
+        # Probabilisticamente atualiza antes de expirar
+        remaining = expiry - time.time()
+        if remaining > 0:
+            random_threshold = remaining - (beta * math.log(random.random()))
+            if random_threshold > 0:
+                return cached
+
+    # Atualiza cache
+    data = fetch_from_database()
+    cache.set(key, data, ttl=ttl)
+    return data
+```
+
+**Atualização em Background:**
+```python
+def get_data(key):
+    cached = cache.get(key)
+
+    if cached:
+        # Verifica se deve atualizar em background
+        if cache.ttl(key) < 300:  # Menos de 5 min restando
+            background_refresh.queue(key)
+        return cached
+
+    return fetch_and_cache(key)
+```
+
+## O que NÃO Cachear
+
+Nem tudo deve ser cacheado:
+
+- **Dados que mudam rapidamente:** Preços de ações, placares ao vivo
+- **Dados específicos do usuário com muitos usuários:** Dados de sessão pra milhões de usuários
+- **Objetos grandes:** Vídeos, arquivos grandes (use CDN ao invés)
+- **Dados sensíveis de segurança:** Tokens de auth, senhas
+- **Dados que precisam ser consistentes:** Saldos bancários, contagem de estoque
+
+## Redis: O Cache Favorito
+
+Redis é a escolha mais popular pra cache de aplicação. Veja por quê:
+
+```python
+import redis
+
+r = redis.Redis(host='localhost', port=6379)
+
+# Operações básicas
+r.set("key", "value", ex=3600)  # Set com TTL
+r.get("key")                      # Get
+r.delete("key")                   # Delete
+
+# Estruturas de dados
+r.hset("user:123", mapping={"name": "Lucas", "email": "..."})  # Hash
+r.lpush("queue", "item1", "item2")  # List (fila)
+r.sadd("tags", "python", "redis")   # Set
+r.zadd("leaderboard", {"player1": 100, "player2": 95})  # Sorted set
+
+# Operações atômicas
+r.incr("page_views")  # Incrementa
+r.setnx("lock", "1")  # Set só se não existe
+```
+
+### Padrões de Cache com Redis
+
+```python
+# Padrão 1: Key-value simples
+cache_key = f"user:{user_id}"
+
+# Padrão 2: Hash pra campos de objeto
+cache_key = f"product:{product_id}"
+r.hgetall(cache_key)  # Pega todos os campos
+
+# Padrão 3: Sorted set pra rankings
+r.zadd("popular", {product_id: view_count})
+r.zrevrange("popular", 0, 9)  # Top 10
+
+# Padrão 4: Set pra tags/categorias
+r.sadd(f"category:{category_id}", *product_ids)
+r.sinter("category:1", "category:2")  # Produtos em ambas categorias
+```
+
+## Medindo Efetividade do Cache
+
+Acompanhe essas métricas:
+
+- **Taxa de hit:** `hits / (hits + misses)` - mire em > 90%
+- **Taxa de miss:** `misses / (hits + misses)` - deve ser baixa
+- **Latência:** Tempo pra ler do cache vs banco
+- **Uso de memória:** Não deixe o cache crescer infinitamente
+
+```python
+def get_with_metrics(key):
+    start = time.time()
+    cached = cache.get(key)
+    cache_time = time.time() - start
+
+    if cached:
+        metrics.increment("cache.hits")
+        metrics.timing("cache.latency", cache_time)
+        return cached
+
+    metrics.increment("cache.misses")
+
+    start = time.time()
+    data = database.query(...)
+    db_time = time.time() - start
+
+    metrics.timing("database.latency", db_time)
+
+    cache.set(key, data)
+    return data
+```
+
+---
+
+Cache é uma daquelas coisas que parece simples mas tem muita nuance. O segredo é começar simples (cache-aside com TTL) e adicionar complexidade só quando você precisar.
+
+Lembra: um cache que é 90% efetivo geralmente é bom o suficiente. Perseguir 100% vai te deixar maluco.
+
+Dúvidas sobre estratégias de cache? Manda nos comentários!
+
+Até a próxima!

@@ -1,0 +1,574 @@
+---
+title: 'Service Discovery e Health Checks'
+date: '2025-01-29'
+language: pt
+tags: ['system-design', 'microservices', 'infrastructure', 'devops']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Num mundo de microserviços onde instâncias sobem e descem o tempo todo, como um serviço sabe onde encontrar outro? E como saber se ele tá saudável? Service discovery e health checks resolvem exatamente isso.'
+images: ['/static/images/system_design.webp']
+---
+
+Imagina que você tem 50 microserviços rodando no seu cluster Kubernetes. O serviço de pedidos precisa chamar o serviço de pagamento. Mas em qual IP? Em qual porta? E se o serviço de pagamento acabou de escalar de 3 pra 8 instâncias? E se duas delas tão com problema?
+
+Em ambientes estáticos, você colocava o IP no arquivo de config e tava feito. Mas no mundo de containers e auto-scaling, IPs mudam o tempo todo. É aí que entra o **service discovery**.
+
+## O Problema
+
+```
+Mundo antigo (IP fixo):
+  payment_service_url = "http://192.168.1.10:8080"
+  # Funciona até o servidor mudar de IP, morrer ou escalar
+
+Mundo novo (dinâmico):
+  Instância 1: IP 10.0.0.5:8080 (saudável)
+  Instância 2: IP 10.0.3.12:8080 (acabou de subir)
+  Instância 3: IP 10.0.1.8:8080 (morrendo)
+  Instância 4: IP 10.0.2.20:8080 (saudável)
+  ... e muda a cada minuto
+```
+
+Hardcodar IPs não funciona mais. Você precisa de um mecanismo dinâmico que responda: "Onde tá o serviço X e quais instâncias dele estão saudáveis?"
+
+## DNS: A Forma Mais Simples
+
+A forma mais básica de service discovery é usar DNS. Cada serviço tem um nome, e o DNS resolve pra um ou mais IPs.
+
+```
+Requisição DNS:
+  "payment-service.internal" → 10.0.0.5, 10.0.3.12, 10.0.2.20
+
+O cliente recebe os IPs e escolhe um (geralmente round-robin).
+```
+
+### Prós e Contras do DNS
+
+```
+Prós:
+  ✓ Todo mundo entende DNS
+  ✓ Nenhuma biblioteca especial necessária
+  ✓ Funciona com qualquer linguagem
+
+Contras:
+  ✗ TTL do cache pode servir IPs desatualizados
+  ✗ Não tem informação de saúde (IP pode estar no DNS mas serviço morto)
+  ✗ Atualização lenta (propagação de DNS)
+  ✗ Sem metadados (versão, capacidade, etc.)
+```
+
+DNS funciona pra casos simples, mas pra microserviços em escala, você precisa de algo mais sofisticado.
+
+## Service Registry
+
+Um service registry é um banco de dados central que mantém informações sobre todas as instâncias de serviço disponíveis.
+
+```
+┌─────────────────────────────┐
+│       Service Registry      │
+│                             │
+│  payment-service:           │
+│    - 10.0.0.5:8080 (healthy)│
+│    - 10.0.3.12:8080 (healthy)│
+│    - 10.0.1.8:8080 (unhealthy)│
+│                             │
+│  order-service:             │
+│    - 10.0.2.1:9090 (healthy)│
+│    - 10.0.2.2:9090 (healthy)│
+│                             │
+│  user-service:              │
+│    - 10.0.4.1:7070 (healthy)│
+└─────────────────────────────┘
+```
+
+O ciclo funciona assim:
+
+```
+1. Serviço sobe → Registra no registry ("Tô vivo, meu IP é X")
+2. Serviço manda heartbeat → "Ainda tô aqui"
+3. Cliente consulta registry → "Onde tá o payment-service?"
+4. Registry responde → "10.0.0.5 e 10.0.3.12 estão saudáveis"
+5. Serviço morre → Registry remove depois de N heartbeats perdidos
+```
+
+## Consul
+
+O [Consul](https://www.consul.io/) da HashiCorp é uma das ferramentas mais populares pra service discovery.
+
+```python
+# Registrando um serviço no Consul
+import consul
+
+c = consul.Consul()
+
+# Registra o serviço com health check
+c.agent.service.register(
+    name="payment-service",
+    service_id="payment-service-1",
+    address="10.0.0.5",
+    port=8080,
+    tags=["v2.1", "production"],
+    check=consul.Check.http(
+        url="http://10.0.0.5:8080/health",
+        interval="10s",      # Checa a cada 10 segundos
+        timeout="5s",
+        deregister="30s"     # Remove se falhar por 30s
+    )
+)
+
+# Descobrindo serviços saudáveis
+_, services = c.health.service("payment-service", passing=True)
+for svc in services:
+    address = svc['Service']['Address']
+    port = svc['Service']['Port']
+    print(f"Instância saudável: {address}:{port}")
+```
+
+O Consul também oferece:
+- **DNS interface**: Consulta serviços via DNS (`payment-service.service.consul`)
+- **Key-Value store**: Armazena configurações distribuídas
+- **Service mesh**: Comunicação segura entre serviços (via Consul Connect)
+
+## etcd
+
+O [etcd](https://etcd.io/) é um key-value store distribuído, famoso por ser o cérebro do Kubernetes.
+
+```python
+import etcd3
+
+client = etcd3.client()
+
+# Registra serviço com lease (TTL)
+lease = client.lease(ttl=30)  # Expira em 30s se não renovar
+
+client.put(
+    '/services/payment-service/instances/1',
+    '{"address": "10.0.0.5", "port": 8080, "version": "2.1"}',
+    lease=lease
+)
+
+# Renova o lease periodicamente (heartbeat)
+# Se o serviço morrer, o lease expira e a entrada é removida
+
+# Descobre serviços
+for value, metadata in client.get_prefix('/services/payment-service/instances/'):
+    instance = json.loads(value)
+    print(f"Instância: {instance['address']}:{instance['port']}")
+
+# Watch: recebe notificações quando instâncias mudam
+events_iterator, cancel = client.watch_prefix('/services/payment-service/')
+for event in events_iterator:
+    if isinstance(event, etcd3.events.PutEvent):
+        print(f"Nova instância: {event.value}")
+    elif isinstance(event, etcd3.events.DeleteEvent):
+        print(f"Instância removida: {event.key}")
+```
+
+## Eureka (Netflix)
+
+O Eureka é a solução de service discovery da Netflix, muito usado no ecossistema Spring.
+
+```java
+// Com Spring Boot, é ridiculamente simples
+
+// No serviço que quer ser descoberto:
+@SpringBootApplication
+@EnableEurekaClient
+public class PaymentServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(PaymentServiceApplication.class, args);
+    }
+}
+
+// No cliente que quer descobrir:
+@Service
+public class OrderService {
+
+    @Autowired
+    private DiscoveryClient discoveryClient;
+
+    public String getPaymentServiceUrl() {
+        List<ServiceInstance> instances =
+            discoveryClient.getInstances("payment-service");
+
+        // Pega uma instância saudável
+        ServiceInstance instance = instances.get(0);
+        return instance.getUri().toString();
+    }
+}
+```
+
+## Client-Side vs Server-Side Discovery
+
+Existem dois padrões principais de como o cliente encontra o serviço.
+
+### Client-Side Discovery
+
+O cliente consulta o registry diretamente e decide pra qual instância mandar a requisição.
+
+```
+┌────────┐     ┌──────────┐
+│ Cliente │────→│ Registry │  1. Consulta: "Onde tá o payment?"
+│         │←────│          │  2. Resposta: [IP1, IP2, IP3]
+│         │     └──────────┘
+│         │
+│         │────→ IP2:8080     3. Cliente escolhe e chama direto
+└────────┘
+```
+
+```python
+# Client-side discovery com round-robin
+class ServiceClient:
+    def __init__(self, registry, service_name):
+        self.registry = registry
+        self.service_name = service_name
+        self.index = 0
+
+    def call(self, path, **kwargs):
+        instances = self.registry.get_healthy(self.service_name)
+        if not instances:
+            raise NoHealthyInstanceError(self.service_name)
+
+        # Round-robin simples
+        instance = instances[self.index % len(instances)]
+        self.index += 1
+
+        url = f"http://{instance.address}:{instance.port}{path}"
+        return requests.get(url, **kwargs)
+```
+
+**Prós:** Menos um hop de rede, cliente tem controle total.
+**Contras:** Lógica de discovery em cada cliente, acoplamento com o registry.
+
+### Server-Side Discovery
+
+O cliente chama um load balancer/proxy que consulta o registry por ele.
+
+```
+┌────────┐     ┌──────────────┐     ┌──────────┐
+│ Cliente │────→│ Load Balancer│←───→│ Registry │
+│         │     │   / Proxy    │     └──────────┘
+└────────┘     │              │
+               │              │────→ IP2:8080
+               └──────────────┘
+```
+
+**Prós:** Cliente simples, só precisa saber o endereço do proxy.
+**Contras:** Hop extra de rede, proxy pode ser gargalo.
+
+Na prática, **server-side é mais comum** porque simplifica os clientes. É o que o Kubernetes faz com Services e o AWS com o ELB.
+
+## Health Checks
+
+Service discovery sem health checks é tipo ter um catálogo telefônico com números desligados. Você sabe o endereço, mas não sabe se funciona.
+
+### Liveness Check
+
+Responde: "O processo tá rodando?"
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/healthz")
+def liveness():
+    # Se esse endpoint responde, o processo tá vivo
+    return {"status": "alive"}
+```
+
+Se o liveness check falha, o orquestrador **reinicia** o container. O processo pode ter travado, entrado em deadlock, ou consumido toda a memória.
+
+### Readiness Check
+
+Responde: "O serviço tá pronto pra receber tráfego?"
+
+```python
+@app.get("/ready")
+def readiness():
+    checks = {}
+
+    # Verifica conexão com o banco
+    try:
+        db.execute("SELECT 1")
+        checks["database"] = "ok"
+    except Exception:
+        checks["database"] = "failed"
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "checks": checks}
+        )
+
+    # Verifica conexão com cache
+    try:
+        redis.ping()
+        checks["cache"] = "ok"
+    except Exception:
+        checks["cache"] = "failed"
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "checks": checks}
+        )
+
+    # Verifica se carregou configurações necessárias
+    if not config.is_loaded():
+        checks["config"] = "failed"
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "checks": checks}
+        )
+
+    return {"status": "ready", "checks": checks}
+```
+
+Se o readiness check falha, o serviço é **removido do pool de tráfego** mas não é reiniciado. Ele pode estar fazendo warm-up, carregando cache ou esperando uma dependência subir.
+
+### Startup Check
+
+Responde: "O serviço terminou de inicializar?"
+
+```yaml
+# Kubernetes: startupProbe
+# Evita que liveness mate o container durante boot lento
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  failureThreshold: 30    # Tenta 30 vezes
+  periodSeconds: 10        # A cada 10s = 5 minutos pra subir
+```
+
+Sem startup probe, um container que demora 2 minutos pra inicializar pode ser morto pelo liveness probe antes de ficar pronto.
+
+### Diferença na Prática
+
+```
+Container subindo:
+  t=0s   startupProbe: checking... (não mata, tá inicializando)
+  t=30s  startupProbe: checking... (ainda não, sem problema)
+  t=60s  startupProbe: OK! (inicialização completa)
+
+  t=60s  readinessProbe: NOT READY (carregando cache)
+         → Não recebe tráfego ainda
+
+  t=90s  readinessProbe: READY!
+         → Começa a receber tráfego
+
+  t=120s livenessProbe: OK
+         → Continua rodando normalmente
+
+Container em problema:
+  t=300s livenessProbe: FAIL (3 vezes consecutivas)
+         → Kubernetes REINICIA o container
+
+  t=500s readinessProbe: FAIL (banco caiu)
+         → Remove do Service (sem tráfego)
+         → Mas NÃO reinicia (pode se recuperar)
+```
+
+## Service Discovery no Kubernetes
+
+O Kubernetes tem service discovery nativo. Não precisa de Consul nem etcd externo (o K8s já usa etcd internamente).
+
+### Services
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  selector:
+    app: payment          # Encontra pods com esse label
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP         # IP interno do cluster
+```
+
+Com isso, qualquer pod no cluster pode chamar `payment-service` pelo nome:
+
+```python
+# Dentro do cluster, isso simplesmente funciona
+response = requests.get("http://payment-service/api/charge")
+
+# O DNS do Kubernetes resolve pra o ClusterIP do Service
+# O Service faz load balancing entre os pods saudáveis
+```
+
+### DNS no Kubernetes
+
+```
+Formato do DNS interno:
+  <service>.<namespace>.svc.cluster.local
+
+Exemplos:
+  payment-service.default.svc.cluster.local
+  payment-service.default  (atalho)
+  payment-service          (se tá no mesmo namespace)
+```
+
+### Probes no Kubernetes
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: payment
+          image: payment-service:2.1
+          ports:
+            - containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 10
+```
+
+## Padrões e Boas Práticas
+
+### Health Check Profundo vs Raso
+
+```python
+# Health check RASO - só verifica se o processo tá vivo
+@app.get("/healthz")
+def shallow_health():
+    return {"status": "ok"}
+
+# Health check PROFUNDO - verifica dependências
+@app.get("/health/deep")
+def deep_health():
+    results = {}
+    overall = True
+
+    for name, check in health_checks.items():
+        try:
+            check()
+            results[name] = {"status": "healthy"}
+        except Exception as e:
+            results[name] = {"status": "unhealthy", "error": str(e)}
+            overall = False
+
+    status_code = 200 if overall else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "healthy" if overall else "unhealthy",
+            "checks": results,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    )
+```
+
+**Cuidado com health checks profundos no liveness!** Se o banco cai e todos os pods falham no liveness, o Kubernetes reinicia todos ao mesmo tempo. Quando o banco volta, todos os pods tentam subir juntos e podem sobrecarregar o banco. Use deep checks no readiness, não no liveness.
+
+### Graceful Shutdown
+
+Quando um serviço vai morrer, ele precisa avisar que não quer mais tráfego:
+
+```python
+import signal
+import sys
+
+class GracefulShutdown:
+    def __init__(self):
+        self.is_shutting_down = False
+        signal.signal(signal.SIGTERM, self._handle_sigterm)
+
+    def _handle_sigterm(self, signum, frame):
+        print("SIGTERM recebido, iniciando shutdown graceful...")
+        self.is_shutting_down = True
+
+    def is_ready(self):
+        return not self.is_shutting_down
+
+shutdown = GracefulShutdown()
+
+@app.get("/ready")
+def readiness():
+    if shutdown.is_ready():
+        return {"status": "ready"}
+    return JSONResponse(status_code=503, content={"status": "shutting_down"})
+
+# Quando SIGTERM chega:
+# 1. readiness retorna 503
+# 2. Service remove pod do pool
+# 3. Requisições em andamento terminam
+# 4. Pod morre limpo
+```
+
+### Retry com Service Discovery
+
+```python
+class ResilientServiceClient:
+    def __init__(self, registry, service_name, max_retries=3):
+        self.registry = registry
+        self.service_name = service_name
+        self.max_retries = max_retries
+
+    def call(self, path, **kwargs):
+        instances = self.registry.get_healthy(self.service_name)
+        tried = set()
+
+        for attempt in range(self.max_retries):
+            # Pega instância que ainda não tentou
+            available = [i for i in instances if i.id not in tried]
+            if not available:
+                break
+
+            instance = random.choice(available)
+            tried.add(instance.id)
+
+            try:
+                url = f"http://{instance.address}:{instance.port}{path}"
+                response = requests.get(url, timeout=5)
+                response.raise_for_status()
+                return response
+            except requests.RequestException:
+                continue
+
+        raise AllInstancesFailedError(self.service_name)
+```
+
+## Comparação Rápida
+
+```
+Ferramenta  │ Tipo           │ Melhor Pra
+────────────┼────────────────┼──────────────────────────
+Consul      │ Service mesh   │ Multi-datacenter, features ricas
+etcd        │ Key-value      │ Kubernetes, config distribuída
+Eureka      │ Registry       │ Ecossistema Spring/Java
+Kubernetes  │ Built-in       │ Se já tá no K8s, use isso
+DNS         │ Básico         │ Ambientes simples e estáveis
+Zookeeper   │ Coordenação    │ Ecossistema Hadoop/Kafka
+```
+
+---
+
+Service discovery e health checks são a cola que mantém microserviços funcionando em ambientes dinâmicos. Sem eles, você tá basicamente tentando ligar pra alguém sem saber o número do telefone e sem saber se a pessoa tá disponível.
+
+Se você tá no Kubernetes, já tem tudo isso de graça. Se não tá, o Consul é provavelmente a melhor opção pra começar.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

@@ -1,0 +1,428 @@
+---
+title: 'Projetando pra Multirregião e Escala Global'
+date: '2025-02-08'
+language: pt
+tags: ['system-design', 'infrastructure', 'scalability', 'cloud']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Quando seus usuários estão espalhados pelo mundo, um deploy em uma região só não resolve. Arquitetura multirregião traz sua aplicação pra perto dos usuários, mas vem com tradeoffs sérios. Veja como pensar sobre isso.'
+images: ['/static/images/system_design.webp']
+---
+
+Imagina que você roda um app num servidor na Virginia. Um usuário em Tóquio faz uma requisição. Essa requisição viaja 11.000 km cruzando o Pacífico, é processada, e a resposta viaja 11.000 km de volta. São mais ou menos 200ms de latência só por causa da física. Você não pode otimizar a velocidade da luz.
+
+A única solução? **Trazer sua aplicação pra perto dos seus usuários.**
+
+É disso que arquitetura multirregião se trata. E é uma das coisas mais complexas que você vai projetar.
+
+## Por que Ir Multirregião?
+
+### 1. Latência
+
+A física não liga pras suas habilidades de otimização.
+
+```
+Região Única (us-east-1):
+  Usuários EUA:    ~20ms  ✓
+  Usuários EU:     ~100ms  ok
+  Usuários Asia:   ~200ms  pesado
+  Austrália:       ~250ms  doloroso
+
+Multirregião:
+  Usuários EUA:    ~20ms  ✓ (us-east-1)
+  Usuários EU:     ~20ms  ✓ (eu-west-1)
+  Usuários Asia:   ~20ms  ✓ (ap-northeast-1)
+  Usuários BR:     ~20ms  ✓ (sa-east-1)
+```
+
+### 2. Disponibilidade
+
+Se uma região inteira cai (acontece!), seu app ainda funciona das outras regiões.
+
+```
+Região Única:
+  us-east-1 fora → 100% dos usuários afetados
+
+Multirregião:
+  us-east-1 fora → tráfego EUA faz failover pra us-west-2
+                  → usuários EU e Asia não são afetados
+```
+
+### 3. Compliance
+
+Alguns dados precisam ficar em países ou regiões específicas.
+
+```
+GDPR: Dados de usuários da UE devem ficar na UE
+LGPD: Dados de usuários brasileiros devem ficar no Brasil
+Residência de dados: Dados financeiros em jurisdições específicas
+```
+
+### 4. Recuperação de Desastres
+
+Desastres naturais, quedas de energia e falhas de infraestrutura são regionais.
+
+## Active-Active vs Active-Passive
+
+### Active-Passive
+
+Uma região lida com todo o tráfego. A outra fica em standby pro failover.
+
+```
+Normal:
+Usuários ──→ us-east-1 (PRIMÁRIO) ──→ DB (leitura/escrita)
+             us-west-2 (STANDBY)  ──→ DB réplica (só leitura)
+
+Failover:
+             us-east-1 (FORA)
+Usuários ──→ us-west-2 (AGORA PRIMÁRIO) ──→ DB promovido a primário
+```
+
+**Prós:**
+- Consistência de dados mais simples (escritor único)
+- Mais barato (recursos do standby podem ser menores)
+- Sem necessidade de resolução de conflitos
+
+**Contras:**
+- Região standby é dinheiro desperdiçado quando não em uso
+- Failover leva tempo (minutos pra detectar e trocar)
+- Usuários longe da região primária ainda têm latência alta
+
+```python
+# Health check e failover active-passive
+class RegionManager:
+    def __init__(self):
+        self.primary = "us-east-1"
+        self.standby = "us-west-2"
+
+    def health_check(self):
+        if not is_healthy(self.primary):
+            self.failover()
+
+    def failover(self):
+        print(f"Fazendo failover de {self.primary} pra {self.standby}")
+
+        # Promove banco da réplica pra primário
+        promote_db_replica(self.standby)
+
+        # Atualiza DNS pra apontar pra região standby
+        update_dns(self.standby)
+
+        # Troca papéis
+        self.primary, self.standby = self.standby, self.primary
+
+        alert_team("Failover de região concluído")
+```
+
+### Active-Active
+
+Todas as regiões lidam com tráfego simultaneamente. É o santo graal, mas também o mais complexo.
+
+```
+              ┌───── us-east-1 ─── DB (leitura/escrita)
+Usuários → DNS─┤                     ↕ replicação
+              └───── eu-west-1 ─── DB (leitura/escrita)
+                                     ↕ replicação
+              └───── sa-east-1 ─── DB (leitura/escrita)
+```
+
+**Prós:**
+- Baixa latência pra todos os usuários
+- Sem atraso de failover (tráfego só muda)
+- Utilização total de todas as regiões
+
+**Contras:**
+- Resolução de conflitos de dados é complexa
+- Maior complexidade operacional
+- Mais caro
+- Consistência eventual entre regiões
+
+```python
+# Active-active com geo-routing
+def route_request(user_request):
+    user_region = detect_user_region(user_request.ip)
+
+    region_mapping = {
+        "north_america": "us-east-1",
+        "europe": "eu-west-1",
+        "asia": "ap-northeast-1",
+        "south_america": "sa-east-1",
+    }
+
+    target_region = region_mapping.get(user_region, "us-east-1")
+
+    # Se região alvo está fora, roteia pra região saudável mais próxima
+    if not is_healthy(target_region):
+        target_region = find_nearest_healthy_region(user_region)
+
+    return forward_to_region(user_request, target_region)
+```
+
+## Estratégias de Replicação de Dados
+
+É aqui que multirregião fica realmente difícil. Como manter dados sincronizados entre regiões?
+
+### Replicação Assíncrona
+
+Escritas vão pra uma região primeiro, depois replicam pras outras.
+
+```
+Escrita em us-east-1 ──→ Commit local (rápido)
+                      ──→ Replica pra eu-west-1 (100ms depois)
+                      ──→ Replica pra sa-east-1 (80ms depois)
+```
+
+**Prós:** Baixa latência de escrita
+**Contras:** Dados podem ser brevemente inconsistentes entre regiões
+
+### Replicação Síncrona
+
+Escritas devem ser confirmadas por todas (ou maioria das) regiões antes de completar.
+
+```
+Escrita em us-east-1 ──→ Envia pra eu-west-1 ──→ Envia pra sa-east-1
+                      ←── ACK de eu-west-1
+                      ←── ACK de sa-east-1
+                      ──→ Commit (todas regiões confirmaram)
+```
+
+**Prós:** Consistência forte
+**Contras:** Latência de escrita = soma da latência inter-região (muito lento)
+
+### A Abordagem Prática: Propriedade por Entidade
+
+Atribui cada pedaço de dado a uma região "home". Leituras podem acontecer em qualquer lugar, escritas vão pra região home.
+
+```python
+def get_home_region(user_id):
+    # Região home do usuário baseada em onde ele se cadastrou
+    user = get_user_metadata(user_id)
+    return user.home_region
+
+def write_user_data(user_id, data):
+    home = get_home_region(user_id)
+
+    if current_region == home:
+        # Escrita local, rápido
+        db.write(user_id, data)
+    else:
+        # Encaminha pra região home
+        forward_write(home, user_id, data)
+
+def read_user_data(user_id):
+    # Lê da réplica local (eventualmente consistente)
+    return local_db.read(user_id)
+
+    # Ou pra consistência forte:
+    # home = get_home_region(user_id)
+    # return remote_read(home, user_id)
+```
+
+## Roteamento Baseado em DNS
+
+Roteia usuários pra região mais próxima usando DNS.
+
+```
+# AWS Route 53 roteamento baseado em latência
+myapp.com → usuário em Londres → eu-west-1 (20ms)
+myapp.com → usuário em Tóquio  → ap-northeast-1 (15ms)
+myapp.com → usuário em SP      → sa-east-1 (10ms)
+```
+
+```python
+# Configuração simplificada de geo-DNS
+dns_records = {
+    "myapp.com": {
+        "type": "latency",
+        "records": [
+            {"region": "us-east-1", "ip": "54.x.x.x"},
+            {"region": "eu-west-1", "ip": "52.x.x.x"},
+            {"region": "sa-east-1", "ip": "18.x.x.x"},
+        ]
+    }
+}
+```
+
+### DNS Failover
+
+```yaml
+# Route 53 health check + failover
+health_check:
+  endpoint: "https://us-east-1.myapp.com/health"
+  interval: 30s
+  failure_threshold: 3
+
+routing_policy:
+  type: failover
+  primary:
+    region: us-east-1
+    health_check: true
+  secondary:
+    region: us-west-2
+    health_check: false  # Sempre considerado saudável
+```
+
+## Lidando com Latência Cross-Region
+
+### Camada de Cache Global
+
+```
+              ┌──── CloudFront/CDN ────┐
+              │   Cache de borda        │
+              │   (global)              │
+              └────────────────────────┘
+                         │
+              ┌──── Redis Cluster ─────┐
+              │  Cache por região       │
+              └────────────────────────┘
+                         │
+              ┌──── Database ──────────┐
+              │  Escritas na região     │
+              │  home                   │
+              └────────────────────────┘
+```
+
+```python
+def get_product(product_id, user_region):
+    # Nível 1: Cache local (sub-milissegundo)
+    cached = local_cache.get(f"product:{product_id}")
+    if cached:
+        return cached
+
+    # Nível 2: Redis regional (1-5ms)
+    cached = regional_redis.get(f"product:{product_id}")
+    if cached:
+        local_cache.set(f"product:{product_id}", cached, ttl=60)
+        return cached
+
+    # Nível 3: Banco de dados (potencialmente cross-region, 20-200ms)
+    product = db.get(product_id)
+    regional_redis.set(f"product:{product_id}", product, ttl=300)
+    local_cache.set(f"product:{product_id}", product, ttl=60)
+    return product
+```
+
+### Padrão Write-Behind
+
+Aceita escritas localmente, sincroniza com outras regiões de forma assíncrona.
+
+```python
+def place_order(order_data, user_region):
+    # Escreve na região local imediatamente
+    order = local_db.insert(order_data)
+
+    # Enfileira pra replicação cross-region
+    replication_queue.publish({
+        "type": "order_created",
+        "source_region": user_region,
+        "data": order_data,
+        "timestamp": time.time()
+    })
+
+    return order  # Usuário recebe resposta rápida
+```
+
+## Soberania de Dados
+
+Alguns dados não podem sair de certas fronteiras geográficas.
+
+```python
+class DataRouter:
+    REGION_RULES = {
+        "eu_user_data": ["eu-west-1", "eu-central-1"],  # GDPR
+        "br_user_data": ["sa-east-1"],                    # LGPD
+        "financial_data": ["us-east-1", "us-west-2"],     # Regulações EUA
+    }
+
+    def get_allowed_regions(self, data_type):
+        return self.REGION_RULES.get(data_type, ["us-east-1"])
+
+    def store(self, data, data_type):
+        allowed = self.get_allowed_regions(data_type)
+        current = get_current_region()
+
+        if current in allowed:
+            local_db.store(data)
+        else:
+            # Encaminha pra uma região permitida
+            remote_store(allowed[0], data)
+
+    def replicate(self, data, data_type, target_region):
+        allowed = self.get_allowed_regions(data_type)
+
+        if target_region not in allowed:
+            raise DataSovereigntyViolation(
+                f"Não é possível replicar {data_type} pra {target_region}"
+            )
+
+        replicate_to(target_region, data)
+```
+
+## Padrões de Arquitetura
+
+### Follow-the-Sun
+
+Roteia tráfego pra região onde é horário comercial no momento.
+
+```
+08:00 UTC → Pico Asia-Pacific → ap-northeast-1 lida com mais tráfego
+16:00 UTC → Pico Europa       → eu-west-1 lida com mais tráfego
+22:00 UTC → Pico Américas     → us-east-1 lida com mais tráfego
+```
+
+### Region-Sharded
+
+Cada usuário pertence a uma região específica. Todos os dados dele ficam lá.
+
+```
+Usuário cadastra no Brasil   → sa-east-1 (todos dados aqui)
+Usuário cadastra na Alemanha → eu-central-1 (todos dados aqui)
+Usuário cadastra no Japão    → ap-northeast-1 (todos dados aqui)
+```
+
+Isso simplifica consistência mas limita features cross-region.
+
+## Considerações de Custo
+
+Multirregião é caro. Seja realista sobre o que você precisa.
+
+```
+Região Única:
+  - 3 servidores de app: $X
+  - 1 banco de dados: $Y
+  Total: ~$Z
+
+Três Regiões:
+  - 9 servidores de app: $3X
+  - 3 bancos de dados: $3Y
+  - Transferência de dados cross-region: $$$
+  - Load balancer global: $
+  Total: ~$4-5Z (não é só 3x!)
+```
+
+Transferência de dados entre regiões é um dos maiores custos. Minimize:
+- Cache agressivo
+- Comprima dados de replicação
+- Agrupe atualizações de replicação em lotes
+- Só replique o que for necessário
+
+## Erros Comuns
+
+1. **Ir multirregião cedo demais:** Região única aguenta mais do que você pensa
+2. **Ignorar lag de replicação:** Usuários veem dados desatualizados e ficam confusos
+3. **Não testar failover:** Seu processo de failover não foi testado até ser testado
+4. **Replicar tudo:** Nem todo dado precisa estar em todas as regiões
+5. **Esquecer dos custos:** Transferência de dados cross-region soma rápido
+6. **Ignorar fusos horários:** Jobs agendados, processamento batch e janelas de manutenção
+
+---
+
+Arquitetura multirregião é poderosa, mas não é de graça. Adiciona complexidade em cada parte do seu sistema: deploy, monitoramento, gerenciamento de dados e debugging.
+
+Meu conselho? Comece com uma região única e um plano sólido de recuperação de desastres. Vá pra multirregião quando tiver problemas reais de latência ou requisitos de compliance que demandem isso. A maioria das aplicações nunca precisa, e tá tudo bem.
+
+Quando for pra multirregião, comece com active-passive. Fique confortável com replicação cross-region antes de tentar active-active. Confia em mim nessa.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

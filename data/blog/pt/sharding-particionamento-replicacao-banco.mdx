@@ -1,0 +1,555 @@
+---
+title: 'Sharding, Particionamento e Replicação de Banco de Dados'
+date: '2025-01-31'
+language: pt
+tags: ['system-design', 'database', 'scalability', 'data']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Quando seu banco de dados não aguenta mais a carga, você precisa dividir pra conquistar. Sharding, particionamento e replicação são as ferramentas pra isso - mas cada uma tem seus trade-offs e armadilhas.'
+images: ['/static/images/system_design.webp']
+---
+
+Seu banco de dados tá com 500 milhões de registros, queries tão demorando 10 segundos, e o DBA tá de cabelo branco. Você já escalou verticalmente (máquina maior), já otimizou índices, já fez cache. E agora?
+
+Agora é hora de **dividir os dados**. É aqui que entram particionamento, sharding e replicação. São conceitos relacionados mas diferentes, e confundir eles é bem comum.
+
+Bora descomplicar.
+
+## Os Conceitos Básicos
+
+```
+Replicação:   Copiar os MESMOS dados em vários lugares
+              (mais cópias = mais leitura, mais disponibilidade)
+
+Particionamento: Dividir os dados DENTRO de um banco
+              (tabela grande → pedaços menores)
+
+Sharding:     Distribuir os dados ENTRE vários bancos
+              (cada banco cuida de uma fatia dos dados)
+```
+
+## Particionamento
+
+Particionamento divide uma tabela grande em pedaços menores, mas tudo ainda dentro do mesmo banco de dados. O banco gerencia isso transparentemente.
+
+### Particionamento Vertical
+
+Divide as **colunas** da tabela.
+
+```sql
+-- Tabela original (muitas colunas)
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    email VARCHAR(200),
+    password_hash VARCHAR(256),
+    bio TEXT,                    -- Texto grande, raramente acessado
+    avatar BYTEA,               -- Imagem, quase nunca lido junto com o resto
+    created_at TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+-- Particionamento vertical: separa dados quentes e frios
+
+-- Tabela principal (dados acessados frequentemente)
+CREATE TABLE users_core (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100),
+    email VARCHAR(200),
+    password_hash VARCHAR(256),
+    created_at TIMESTAMP,
+    last_login TIMESTAMP
+);
+
+-- Tabela de perfil (dados acessados raramente)
+CREATE TABLE users_profile (
+    user_id INT PRIMARY KEY REFERENCES users_core(id),
+    bio TEXT,
+    avatar BYTEA
+);
+```
+
+```
+Benefício:
+  SELECT name, email FROM users_core WHERE id = 123;
+  → Lê uma linha pequena (sem carregar bio e avatar)
+  → Mais registros cabem na memória/cache
+  → Query mais rápida
+```
+
+### Particionamento Horizontal
+
+Divide as **linhas** da tabela. Mesmas colunas, mas os dados são distribuídos entre partições.
+
+```sql
+-- PostgreSQL: Particionamento por range de data
+CREATE TABLE orders (
+    id SERIAL,
+    user_id INT,
+    total DECIMAL,
+    created_at TIMESTAMP,
+    status VARCHAR(20)
+) PARTITION BY RANGE (created_at);
+
+-- Cada partição armazena um período
+CREATE TABLE orders_2024_q1 PARTITION OF orders
+    FOR VALUES FROM ('2024-01-01') TO ('2024-04-01');
+
+CREATE TABLE orders_2024_q2 PARTITION OF orders
+    FOR VALUES FROM ('2024-04-01') TO ('2024-07-01');
+
+CREATE TABLE orders_2024_q3 PARTITION OF orders
+    FOR VALUES FROM ('2024-07-01') TO ('2024-10-01');
+
+CREATE TABLE orders_2024_q4 PARTITION OF orders
+    FOR VALUES FROM ('2024-10-01') TO ('2025-01-01');
+
+CREATE TABLE orders_2025_q1 PARTITION OF orders
+    FOR VALUES FROM ('2025-01-01') TO ('2025-04-01');
+```
+
+```
+Query: SELECT * FROM orders WHERE created_at > '2024-10-01';
+
+Sem particionamento: Escaneia TODAS as 500M linhas
+Com particionamento: Escaneia SÓ orders_2024_q4 e orders_2025_q1
+                     → Pode ser 10x mais rápido
+```
+
+## Sharding
+
+Sharding é distribuir os dados entre **múltiplos bancos de dados independentes** (shards). Cada shard é uma instância separada com seu próprio hardware.
+
+```
+                    ┌──────────────┐
+                    │   Aplicação  │
+                    │  (router)    │
+                    └──────┬───────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+        ┌──────────┐ ┌──────────┐ ┌──────────┐
+        │ Shard A  │ │ Shard B  │ │ Shard C  │
+        │ users    │ │ users    │ │ users    │
+        │ 1-100K   │ │ 100K-200K│ │ 200K+   │
+        └──────────┘ └──────────┘ └──────────┘
+
+Cada shard é um banco completo e independente.
+```
+
+### Estratégia 1: Range-Based Sharding
+
+Distribui dados baseado em um intervalo de valores.
+
+```python
+def get_shard(user_id):
+    if user_id <= 100_000:
+        return "shard_a"
+    elif user_id <= 200_000:
+        return "shard_b"
+    else:
+        return "shard_c"
+
+# Uso
+shard = get_shard(user_id=150_000)  # → shard_b
+connection = shard_connections[shard]
+user = connection.execute("SELECT * FROM users WHERE id = ?", [150_000])
+```
+
+**Prós:** Simples, queries por range são eficientes.
+**Contras:** Hotspots. Se usuários novos (IDs altos) são mais ativos, o último shard fica sobrecarregado.
+
+```
+Problema de hotspot:
+
+Shard A (users 1-100K):    ████░░░░░░ 40% carga (contas antigas)
+Shard B (users 100K-200K): ██████░░░░ 60% carga (contas médias)
+Shard C (users 200K+):     ██████████ 100% carga (contas novas e ativas!)
+```
+
+### Estratégia 2: Hash-Based Sharding
+
+Aplica uma função hash no shard key pra distribuir uniformemente.
+
+```python
+import hashlib
+
+NUM_SHARDS = 4
+
+def get_shard(user_id):
+    hash_value = int(hashlib.md5(str(user_id).encode()).hexdigest(), 16)
+    shard_index = hash_value % NUM_SHARDS
+    return f"shard_{shard_index}"
+
+# Distribuição uniforme independente do padrão de IDs
+get_shard(1)       # → shard_2
+get_shard(2)       # → shard_0
+get_shard(3)       # → shard_3
+get_shard(100000)  # → shard_1
+```
+
+**Prós:** Distribuição uniforme, sem hotspots.
+**Contras:** Queries por range são ineficientes (precisam consultar todos os shards). Resharding é doloroso quando adiciona/remove shards.
+
+### Consistent Hashing
+
+Resolve o problema de resharding. Quando adiciona ou remove um shard, só precisa mover uma fração dos dados.
+
+```python
+import hashlib
+from bisect import bisect_right
+
+class ConsistentHash:
+    def __init__(self, nodes, virtual_nodes=150):
+        self.ring = []
+        self.node_map = {}
+
+        for node in nodes:
+            for i in range(virtual_nodes):
+                key = f"{node}:{i}"
+                hash_val = self._hash(key)
+                self.ring.append(hash_val)
+                self.node_map[hash_val] = node
+
+        self.ring.sort()
+
+    def _hash(self, key):
+        return int(hashlib.md5(key.encode()).hexdigest(), 16)
+
+    def get_node(self, key):
+        hash_val = self._hash(str(key))
+        index = bisect_right(self.ring, hash_val) % len(self.ring)
+        return self.node_map[self.ring[index]]
+
+# Uso
+ch = ConsistentHash(["shard_a", "shard_b", "shard_c"])
+print(ch.get_node("user:12345"))  # → shard_b
+
+# Adicionar shard_d só move ~25% dos dados (1/4 do total)
+# Em hash simples, TODOS os dados seriam redistribuídos
+```
+
+### Estratégia 3: Directory-Based Sharding
+
+Um serviço central mantém um mapeamento explícito de cada chave pro seu shard.
+
+```python
+class ShardDirectory:
+    def __init__(self):
+        self.directory = {}  # Pode ser um banco/cache dedicado
+
+    def get_shard(self, entity_id):
+        if entity_id not in self.directory:
+            # Novo registro: escolhe shard com menos dados
+            shard = self._least_loaded_shard()
+            self.directory[entity_id] = shard
+        return self.directory[entity_id]
+
+    def migrate(self, entity_id, new_shard):
+        # Pode mover registros individuais entre shards
+        self.directory[entity_id] = new_shard
+
+    def _least_loaded_shard(self):
+        loads = {s: 0 for s in available_shards}
+        for shard in self.directory.values():
+            loads[shard] += 1
+        return min(loads, key=loads.get)
+```
+
+**Prós:** Flexibilidade total, pode mover dados sob demanda.
+**Contras:** Directory é um ponto único de falha e um gargalo.
+
+## Replicação
+
+Replicação é copiar dados de um banco pra outros. Diferente de sharding (que divide dados), replicação **duplica dados**.
+
+### Leader-Follower (Master-Slave)
+
+O padrão mais comum. Um líder recebe escritas, followers recebem leituras.
+
+```
+         Escritas
+            │
+            ▼
+    ┌──────────────┐
+    │    Leader     │
+    │  (read/write) │
+    └──────┬───────┘
+           │ Replicação (assíncrona ou síncrona)
+    ┌──────┼───────┐
+    ▼      ▼       ▼
+┌────────┐┌────────┐┌────────┐
+│Follower││Follower││Follower│
+│(read)  ││(read)  ││(read)  │
+└────────┘└────────┘└────────┘
+    ▲         ▲         ▲
+    └─────────┼─────────┘
+          Leituras
+```
+
+```python
+class ReplicatedDatabase:
+    def __init__(self, leader, followers):
+        self.leader = leader
+        self.followers = followers
+        self.read_index = 0
+
+    def write(self, query, params):
+        # Escritas SEMPRE vão pro leader
+        return self.leader.execute(query, params)
+
+    def read(self, query, params):
+        # Leituras vão pra um follower (round-robin)
+        follower = self.followers[self.read_index % len(self.followers)]
+        self.read_index += 1
+        return follower.execute(query, params)
+
+    def read_strong(self, query, params):
+        # Leitura forte: vai pro leader (garante dado mais recente)
+        return self.leader.execute(query, params)
+```
+
+#### Replicação Síncrona vs Assíncrona
+
+```
+Síncrona:
+  Leader escreve → Espera followers confirmarem → Retorna pro cliente
+  + Dados sempre consistentes
+  - Mais lento (espera rede)
+  - Se um follower tá lento, tudo fica lento
+
+Assíncrona:
+  Leader escreve → Retorna pro cliente → Replica pros followers depois
+  + Mais rápido
+  - Follower pode ter dados desatualizados
+  - Se leader morre antes de replicar, dados são perdidos
+
+Semi-síncrona:
+  Leader escreve → Espera pelo menos 1 follower confirmar → Retorna
+  Compromisso entre os dois
+```
+
+### Multi-Leader
+
+Múltiplos nós aceitam escritas. Útil pra cenários multi-região.
+
+```
+       ┌──────────┐         ┌──────────┐
+       │ Leader A │ ◄──────►│ Leader B │
+       │ (US-East)│         │ (EU-West)│
+       └──────┬───┘         └──────┬───┘
+              │                    │
+     ┌────────┴────┐      ┌───────┴─────┐
+     ▼             ▼      ▼             ▼
+┌────────┐   ┌────────┐ ┌────────┐ ┌────────┐
+│Follower│   │Follower│ │Follower│ │Follower│
+└────────┘   └────────┘ └────────┘ └────────┘
+```
+
+O grande problema: **conflitos**. Se dois leaders modificam o mesmo registro simultaneamente, quem ganha?
+
+```python
+# Estratégias de resolução de conflito
+
+# 1. Last Write Wins (LWW) - simples mas pode perder dados
+def resolve_lww(value_a, ts_a, value_b, ts_b):
+    return value_a if ts_a > ts_b else value_b
+
+# 2. Merge customizado - específico da aplicação
+def resolve_shopping_cart(cart_a, cart_b):
+    # União dos dois carrinhos
+    merged = {}
+    all_items = set(list(cart_a.keys()) + list(cart_b.keys()))
+    for item in all_items:
+        merged[item] = max(cart_a.get(item, 0), cart_b.get(item, 0))
+    return merged
+
+# 3. Versioning com vector clocks
+def resolve_with_vector_clock(versions):
+    # Se uma versão domina a outra, usa a dominante
+    # Se são concorrentes, precisa de merge manual
+    pass
+```
+
+### Read Replicas como Estratégia de Escala
+
+```python
+# Padrão comum: direciona tipo de query pra instância correta
+
+class SmartDBRouter:
+    def __init__(self, primary, replicas):
+        self.primary = primary
+        self.replicas = replicas
+
+    def route(self, query, needs_fresh_data=False):
+        if self._is_write(query):
+            return self.primary
+
+        if needs_fresh_data:
+            return self.primary  # Leitura forte
+
+        return self._pick_replica()  # Leitura eventual
+
+    def _is_write(self, query):
+        return query.strip().upper().startswith(
+            ('INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP')
+        )
+
+    def _pick_replica(self):
+        # Escolhe réplica com menor lag de replicação
+        best = min(self.replicas, key=lambda r: r.replication_lag())
+        if best.replication_lag() > 5:  # Lag > 5 segundos
+            return self.primary  # Fallback pro primário
+        return best
+```
+
+## Desafios de Consistência
+
+### Problema: Read-After-Write
+
+```
+t=0  Usuário escreve no Leader: UPDATE users SET name = 'Lucas' WHERE id = 1
+t=1  Usuário lê do Follower:  SELECT name FROM users WHERE id = 1
+     → Retorna "Andrade" (nome antigo!)
+     → Follower ainda não recebeu a replicação
+```
+
+Solução:
+
+```python
+def update_and_read_profile(user_id, new_name):
+    # Escreve no leader
+    primary.execute("UPDATE users SET name = %s WHERE id = %s", [new_name, user_id])
+
+    # Marca pra ler do primary por uns segundos
+    cache.set(f"read_primary:{user_id}", True, ttl=5)
+
+def get_profile(user_id):
+    if cache.get(f"read_primary:{user_id}"):
+        return primary.execute("SELECT * FROM users WHERE id = %s", [user_id])
+    return replica.execute("SELECT * FROM users WHERE id = %s", [user_id])
+```
+
+### Problema: Cross-Shard Queries
+
+```sql
+-- Com sharding por user_id, essa query é um pesadelo:
+SELECT u.name, COUNT(o.id) as total_orders
+FROM users u
+JOIN orders o ON u.id = o.user_id
+GROUP BY u.name
+ORDER BY total_orders DESC
+LIMIT 10;
+
+-- Precisa consultar TODOS os shards e agregar os resultados!
+```
+
+```python
+# Cross-shard query na prática
+def get_top_users_by_orders():
+    results = []
+
+    # Consulta cada shard
+    for shard in all_shards:
+        partial = shard.execute("""
+            SELECT user_id, COUNT(*) as order_count
+            FROM orders
+            GROUP BY user_id
+            ORDER BY order_count DESC
+            LIMIT 10
+        """)
+        results.extend(partial)
+
+    # Agrega resultados de todos os shards
+    aggregated = {}
+    for user_id, count in results:
+        aggregated[user_id] = aggregated.get(user_id, 0) + count
+
+    # Ordena e pega top 10
+    top_10 = sorted(aggregated.items(), key=lambda x: x[1], reverse=True)[:10]
+    return top_10
+```
+
+## Quando NÃO Fazer Shard
+
+Sharding adiciona **complexidade enorme**. Antes de shardar, considere:
+
+```
+Antes de shardar, já tentou:
+
+□ Otimizar queries e índices?
+  → Uma query mal otimizada pode ser 1000x mais lenta
+
+□ Adicionar cache (Redis)?
+  → Pode reduzir load no banco em 90%
+
+□ Read replicas?
+  → Se o problema é leitura, replicas podem resolver
+
+□ Particionamento (mesmo banco)?
+  → Mais simples que sharding, sem complexidade distribuída
+
+□ Arquivar dados antigos?
+  → Tabela com 5 anos de dados? Move os antigos pra cold storage
+
+□ Escalar verticalmente?
+  → Às vezes uma máquina maior é mais barato que a complexidade de sharding
+```
+
+### Sinais de que Você PRECISA de Sharding
+
+```
+✓ Banco principal tem mais de 1TB e crescendo
+✓ Throughput de escrita é o gargalo (read replicas não ajudam)
+✓ Single point of failure não é aceitável
+✓ Requisitos regulatórios exigem dados em regiões específicas
+✓ Já otimizou tudo que podia e ainda não é suficiente
+```
+
+## Exemplo Prático: E-commerce
+
+```python
+# Estratégia de sharding pra e-commerce
+
+class EcommerceShardRouter:
+    def __init__(self):
+        # Usuários shardados por user_id
+        self.user_shards = ConsistentHash(["user_shard_1", "user_shard_2", "user_shard_3"])
+
+        # Pedidos shardados por user_id (pra manter dados do mesmo usuário juntos)
+        self.order_shards = self.user_shards  # Mesmo sharding key!
+
+        # Produtos NÃO shardados (catálogo relativamente pequeno)
+        self.product_db = "product_primary"
+
+    def get_user(self, user_id):
+        shard = self.user_shards.get_node(f"user:{user_id}")
+        return connections[shard].execute(
+            "SELECT * FROM users WHERE id = %s", [user_id]
+        )
+
+    def create_order(self, user_id, items):
+        # Pedido vai pro mesmo shard do usuário
+        shard = self.order_shards.get_node(f"user:{user_id}")
+        return connections[shard].execute(
+            "INSERT INTO orders (user_id, items) VALUES (%s, %s)",
+            [user_id, json.dumps(items)]
+        )
+
+    def get_user_orders(self, user_id):
+        # Leitura eficiente: usuário e pedidos no mesmo shard
+        shard = self.order_shards.get_node(f"user:{user_id}")
+        return connections[shard].execute(
+            "SELECT * FROM orders WHERE user_id = %s", [user_id]
+        )
+```
+
+---
+
+Sharding, particionamento e replicação são ferramentas poderosas, mas cada uma resolve um problema diferente. Replicação é pra disponibilidade e escalar leituras. Particionamento é pra performance de queries. Sharding é pra quando um único banco não dá mais conta.
+
+Minha recomendação: esgote todas as opções mais simples antes de shardar. Sharding é uma porta que, depois que você entra, é muito difícil de voltar.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!

@@ -1,0 +1,543 @@
+---
+title: 'Logging and Tracing in Distributed Systems'
+date: '2025-02-04'
+language: en
+tags: ['system-design', 'observability', 'logging', 'distributed-systems']
+authors: ['lucas-andrade']
+draft: true
+summary: 'When a request touches 10 different services, how do you figure out where things went wrong? Structured logging, correlation IDs, and distributed tracing are the tools that make debugging distributed systems actually possible.'
+images: ['/static/images/system_design.webp']
+---
+
+You have a microservices architecture. A user complains that their order failed. You check the logs. There are millions of log lines across 15 different services. How do you find the one request that failed?
+
+If you've been there, you know the pain. This is why structured logging, correlation IDs, and distributed tracing exist. They turn "searching for a needle in a haystack" into "following a trail of breadcrumbs."
+
+## The Problem with Traditional Logging
+
+Let's start with what most people do (and why it doesn't scale).
+
+```python
+# Traditional logging - fine for a monolith
+import logging
+
+logger = logging.getLogger(__name__)
+
+def process_order(order_id, user_id):
+    logger.info(f"Processing order {order_id} for user {user_id}")
+
+    try:
+        validate_order(order_id)
+        logger.info(f"Order {order_id} validated")
+
+        charge_payment(order_id)
+        logger.info(f"Payment charged for order {order_id}")
+
+        send_confirmation(order_id)
+        logger.info(f"Confirmation sent for order {order_id}")
+    except Exception as e:
+        logger.error(f"Error processing order {order_id}: {e}")
+```
+
+In a monolith, this works okay. All logs are in one place, in chronological order. But in a distributed system:
+
+```
+order-service:    "Processing order 456"
+payment-service:  "Charging $29.99"
+inventory-service: "Reserving item 789"
+email-service:    "Sending confirmation"
+```
+
+Which payment goes with which order? Which inventory reservation matches which request? You can't tell. These are separate services with separate log files, and there's no way to connect them.
+
+## Structured Logging
+
+The first step: stop logging unstructured strings. Log structured data instead.
+
+### Unstructured (Bad)
+
+```
+2025-02-04 10:15:23 INFO Processing order 456 for user 123
+2025-02-04 10:15:24 ERROR Failed to charge payment for order 456: Card declined
+```
+
+Looks readable to humans, but try parsing that programmatically. Every log line has a different format. Good luck writing a regex that catches everything.
+
+### Structured (Good)
+
+```python
+import structlog
+import json
+
+logger = structlog.get_logger()
+
+def process_order(order_id, user_id):
+    log = logger.bind(order_id=order_id, user_id=user_id, service="order-service")
+
+    log.info("order.processing_started")
+
+    try:
+        validate_order(order_id)
+        log.info("order.validated", items_count=3)
+
+        charge_payment(order_id)
+        log.info("order.payment_charged", amount=29.99, currency="USD")
+
+    except PaymentError as e:
+        log.error("order.payment_failed",
+                  error_type=type(e).__name__,
+                  error_message=str(e),
+                  card_last_four="4242")
+```
+
+Output (JSON):
+
+```json
+{"timestamp": "2025-02-04T10:15:23Z", "level": "info", "event": "order.processing_started", "order_id": 456, "user_id": 123, "service": "order-service"}
+{"timestamp": "2025-02-04T10:15:23Z", "level": "info", "event": "order.validated", "order_id": 456, "user_id": 123, "service": "order-service", "items_count": 3}
+{"timestamp": "2025-02-04T10:15:24Z", "level": "error", "event": "order.payment_failed", "order_id": 456, "user_id": 123, "service": "order-service", "error_type": "CardDeclined", "error_message": "Card was declined", "card_last_four": "4242"}
+```
+
+Now every log line is a JSON object. You can search, filter, aggregate, and analyze these logs with tools. "Show me all orders that failed with CardDeclined in the last hour" becomes a simple query.
+
+### Structured Logging Best Practices
+
+```python
+# 1. Use consistent event names
+log.info("order.created")        # noun.verb_past_tense
+log.info("payment.charged")
+log.info("email.sent")
+log.error("payment.failed")
+
+# 2. Include relevant context, but not too much
+log.info("order.created",
+    order_id=order.id,
+    user_id=user.id,
+    total=order.total,
+    items_count=len(order.items)
+)
+# DON'T include the entire order object with all item details
+
+# 3. NEVER log sensitive data
+log.info("user.login",
+    user_id=user.id,
+    email=mask_email(user.email)  # l***s@example.com
+)
+# NEVER: password, credit card numbers, tokens, PII
+
+# 4. Use appropriate log levels
+log.debug("cache.checked", hit=True)        # Verbose, development only
+log.info("order.created", order_id=123)      # Normal operations
+log.warning("cache.near_capacity", usage=85) # Something to watch
+log.error("payment.failed", reason="timeout") # Something broke
+log.critical("database.connection_lost")      # Something is very broken
+```
+
+## Correlation IDs: Connecting the Dots
+
+A **correlation ID** (also called a request ID or trace ID) is a unique identifier that follows a request across all services.
+
+```python
+import uuid
+
+class CorrelationMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    def __call__(self, request):
+        # Get correlation ID from header, or generate a new one
+        correlation_id = request.headers.get('X-Correlation-ID', str(uuid.uuid4()))
+
+        # Add to request context
+        request.state.correlation_id = correlation_id
+
+        # Bind to logger
+        logger = structlog.get_logger().bind(correlation_id=correlation_id)
+
+        response = self.app(request)
+
+        # Pass it along in response headers too
+        response.headers['X-Correlation-ID'] = correlation_id
+
+        return response
+```
+
+Now when Service A calls Service B, it passes the correlation ID:
+
+```python
+# Service A (order-service)
+def create_order(request):
+    correlation_id = request.state.correlation_id
+    log = logger.bind(correlation_id=correlation_id)
+
+    log.info("order.creating", user_id=request.user_id)
+
+    # Pass correlation ID to downstream services
+    response = httpx.post(
+        "http://payment-service/charge",
+        json={"order_id": order.id, "amount": order.total},
+        headers={"X-Correlation-ID": correlation_id}
+    )
+
+    log.info("order.created", order_id=order.id)
+
+# Service B (payment-service)
+def charge(request):
+    correlation_id = request.headers.get('X-Correlation-ID')
+    log = logger.bind(correlation_id=correlation_id)
+
+    log.info("payment.charging", amount=request.json['amount'])
+    # ...
+```
+
+Now you can search for `correlation_id = "abc-123"` and see EVERYTHING that happened for that request across ALL services:
+
+```json
+{"timestamp": "10:15:23.001", "service": "api-gateway",    "correlation_id": "abc-123", "event": "request.received"}
+{"timestamp": "10:15:23.005", "service": "order-service",   "correlation_id": "abc-123", "event": "order.creating"}
+{"timestamp": "10:15:23.050", "service": "inventory-service","correlation_id": "abc-123", "event": "inventory.checking"}
+{"timestamp": "10:15:23.080", "service": "inventory-service","correlation_id": "abc-123", "event": "inventory.reserved"}
+{"timestamp": "10:15:23.100", "service": "payment-service", "correlation_id": "abc-123", "event": "payment.charging"}
+{"timestamp": "10:15:23.500", "service": "payment-service", "correlation_id": "abc-123", "event": "payment.charged"}
+{"timestamp": "10:15:23.510", "service": "order-service",   "correlation_id": "abc-123", "event": "order.created"}
+{"timestamp": "10:15:23.520", "service": "email-service",   "correlation_id": "abc-123", "event": "email.sending"}
+```
+
+Beautiful. One ID tells the complete story.
+
+## Distributed Tracing
+
+Correlation IDs are great, but distributed tracing takes it further. Instead of just connecting logs, tracing shows you the **timing and structure** of a request as it flows through your system.
+
+### Spans and Traces
+
+A **trace** represents the entire journey of a request. A **span** represents a single operation within that trace.
+
+```
+Trace: abc-123 (total: 520ms)
+│
+├── Span: api-gateway (0ms → 520ms)
+│   ├── Span: order-service.create_order (5ms → 510ms)
+│   │   ├── Span: inventory-service.check (50ms → 80ms)
+│   │   ├── Span: inventory-service.reserve (80ms → 85ms)
+│   │   ├── Span: payment-service.charge (100ms → 500ms)  ← THIS IS SLOW!
+│   │   │   ├── Span: stripe-api.call (110ms → 490ms)     ← External API
+│   │   │   └── Span: db.update_payment (490ms → 498ms)
+│   │   └── Span: email-service.send (502ms → 508ms)
+│   │        └── Span: smtp.send (503ms → 507ms)
+```
+
+Just by looking at this, you immediately see that the Stripe API call is taking 380ms. That's where the bottleneck is. No guessing, no grep-ing through log files.
+
+### Implementing with OpenTelemetry
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.jaeger.thrift import JaegerExporter
+
+# Set up tracing
+provider = TracerProvider()
+jaeger_exporter = JaegerExporter(
+    agent_host_name="jaeger",
+    agent_port=6831
+)
+provider.add_span_processor(BatchSpanProcessor(jaeger_exporter))
+trace.set_tracer_provider(provider)
+
+tracer = trace.get_tracer(__name__)
+
+# Instrument your code
+def create_order(request):
+    with tracer.start_as_current_span("order.create") as span:
+        span.set_attribute("user.id", request.user_id)
+        span.set_attribute("order.items_count", len(request.items))
+
+        # Child span for inventory check
+        with tracer.start_as_current_span("inventory.check") as inv_span:
+            available = check_inventory(request.items)
+            inv_span.set_attribute("inventory.available", available)
+
+        # Child span for payment
+        with tracer.start_as_current_span("payment.charge") as pay_span:
+            pay_span.set_attribute("payment.amount", request.total)
+            try:
+                charge_result = charge_payment(request)
+                pay_span.set_attribute("payment.status", "success")
+            except PaymentError as e:
+                pay_span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+                pay_span.record_exception(e)
+                raise
+
+        # Child span for notification
+        with tracer.start_as_current_span("notification.send"):
+            send_confirmation(request.user_id, order_id)
+
+        return {"order_id": order_id}
+```
+
+### Auto-Instrumentation
+
+The best part? You don't have to manually instrument everything. OpenTelemetry has auto-instrumentation for most popular libraries:
+
+```python
+# Install auto-instrumentation packages
+# pip install opentelemetry-instrumentation-flask
+# pip install opentelemetry-instrumentation-requests
+# pip install opentelemetry-instrumentation-psycopg2
+# pip install opentelemetry-instrumentation-redis
+
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
+
+# One-liner instrumentation
+FlaskInstrumentor().instrument_app(app)    # HTTP server
+RequestsInstrumentor().instrument()         # HTTP client
+Psycopg2Instrumentor().instrument()         # PostgreSQL
+RedisInstrumentor().instrument()            # Redis
+
+# Now every HTTP request, DB query, and Redis call automatically
+# creates spans with timing information. No manual code needed!
+```
+
+## Tracing Tools: Jaeger and Zipkin
+
+### Jaeger
+
+Originally built by Uber, now a CNCF graduated project. It's the most popular open-source tracing backend.
+
+```yaml
+# docker-compose.yml for Jaeger
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"  # UI
+      - "6831:6831/udp"  # Accept traces
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+```
+
+Jaeger's UI lets you:
+- Search traces by service, operation, duration, tags
+- Visualize the full request timeline
+- Compare traces side by side
+- See dependency graphs between services
+
+### Zipkin
+
+Similar to Jaeger, originally built by Twitter. Slightly simpler but very capable.
+
+```yaml
+services:
+  zipkin:
+    image: openzipkin/zipkin:latest
+    ports:
+      - "9411:9411"
+```
+
+Both are great. Jaeger has more features, Zipkin is simpler. For most teams, either works fine.
+
+## Log Aggregation
+
+With distributed systems, logs are scattered across many servers. You need a central place to collect and search them.
+
+### ELK Stack (Elasticsearch, Logstash, Kibana)
+
+The classic log aggregation stack.
+
+```
+Services → Logstash (collect & transform) → Elasticsearch (store & index) → Kibana (search & visualize)
+```
+
+```python
+# Configure your app to send logs to Logstash
+import logging
+import logstash
+
+logger = logging.getLogger('my-app')
+logger.addHandler(logstash.TCPLogstashHandler(
+    host='logstash.example.com',
+    port=5000,
+    version=1
+))
+```
+
+Or more commonly, use Filebeat as a lightweight shipper:
+
+```yaml
+# filebeat.yml
+filebeat.inputs:
+  - type: container
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    processors:
+      - decode_json_fields:
+          fields: ["message"]
+          target: ""
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+```
+
+### Grafana Loki
+
+A newer, lighter-weight alternative to ELK. It's like "Prometheus but for logs."
+
+```yaml
+# promtail config (log shipper for Loki)
+server:
+  http_listen_port: 9080
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: containers
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*-json.log
+```
+
+**Why Loki over ELK?**
+- Much less resource-hungry (doesn't index log content, only labels)
+- Integrates natively with Grafana (same dashboards for metrics AND logs)
+- Cheaper to operate at scale
+
+**When to prefer ELK:**
+- When you need full-text search across log content
+- When you have complex log analysis needs
+- When you're already invested in the Elastic ecosystem
+
+## Bringing It All Together
+
+In a production system, you want metrics, logs, and traces working together:
+
+```
+┌──────────────────────────────────────────────────────┐
+│                   Your Services                      │
+│                                                      │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
+│  │ Metrics     │  │ Structured  │  │ Distributed │  │
+│  │ (Prometheus)│  │ Logs (JSON) │  │ Traces(OTel)│  │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  │
+└─────────┼────────────────┼────────────────┼──────────┘
+          │                │                │
+          ▼                ▼                ▼
+   ┌────────────┐  ┌────────────┐  ┌────────────┐
+   │ Prometheus │  │   Loki     │  │   Jaeger   │
+   └──────┬─────┘  └──────┬─────┘  └──────┬─────┘
+          │                │                │
+          └────────────────┼────────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │   Grafana   │  ← Single pane of glass
+                    └─────────────┘
+```
+
+The power is in connecting them. When you see a spike in error rate on your Grafana dashboard (metrics), you click through to see the related logs (Loki), and then jump to a specific trace (Jaeger) to see exactly where the failure happened.
+
+### Example Debugging Flow
+
+```
+1. Alert fires: "Error rate above 5%"
+2. Open Grafana dashboard
+   → See error spike started at 14:32
+   → Errors are coming from payment-service
+
+3. Switch to logs in Grafana (Loki)
+   → Filter: service="payment-service" level="error" time > 14:32
+   → See: "payment.failed: connection timeout to Stripe API"
+   → Grab a correlation_id from one of these logs
+
+4. Open Jaeger, search for that trace
+   → See the full request flow
+   → Stripe API call timing out at 30s
+   → Confirm: external dependency issue
+
+5. Resolution: Stripe is having an outage
+   → Enable circuit breaker for payment service
+   → Queue failed payments for retry
+   → Notify affected users
+```
+
+Total time to diagnose: 5 minutes instead of 2 hours.
+
+## Practical Tips
+
+### Log Retention
+
+Logs can get expensive to store. Set up retention policies:
+
+```yaml
+# Keep detailed logs for 7 days
+# Keep aggregated logs for 30 days
+# Keep critical logs for 1 year
+# Archive to cold storage (S3) for compliance
+
+retention:
+  hot_storage: 7d    # Fast SSD, searchable
+  warm_storage: 30d  # Slower, still searchable
+  cold_storage: 365d # S3/Glacier, for compliance only
+```
+
+### Sampling
+
+At high traffic volumes, you don't need to trace every single request:
+
+```python
+from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
+
+# Sample 10% of requests
+sampler = TraceIdRatioBased(0.1)
+
+# But always trace errors and slow requests
+class SmartSampler:
+    def should_sample(self, context, trace_id, name, attributes):
+        # Always sample errors
+        if attributes and attributes.get("error"):
+            return True
+        # Always sample slow requests
+        if attributes and attributes.get("duration_ms", 0) > 1000:
+            return True
+        # Sample 10% of normal requests
+        return (trace_id % 100) < 10
+```
+
+### What to Log at Each Level
+
+```
+DEBUG:  Cache hit/miss, internal state changes
+        → Only enabled in development or when actively debugging
+
+INFO:   Request received, order created, payment processed
+        → Normal business operations
+
+WARNING: Retry attempt, cache near capacity, slow query
+        → Something unusual that might become a problem
+
+ERROR:  Payment failed, service unavailable, timeout
+        → Something broke for a specific request
+
+CRITICAL: Database connection lost, out of memory, data corruption
+         → The system itself is in trouble
+```
+
+---
+
+Structured logging, correlation IDs, and distributed tracing are the three pillars that make debugging distributed systems manageable. Without them, you're basically reading tea leaves.
+
+Start with structured logging and correlation IDs. Those two alone will save you hours of debugging time. When your system grows, add distributed tracing with OpenTelemetry and a backend like Jaeger.
+
+Questions about setting up observability for your system? Got war stories about debugging without traces? Drop them in the comments!
+
+Until next time!

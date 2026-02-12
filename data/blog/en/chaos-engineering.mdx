@@ -1,0 +1,553 @@
+---
+title: 'Chaos Engineering: Breaking Things on Purpose'
+date: '2025-01-27'
+language: en
+tags: ['system-design', 'chaos-engineering', 'resilience', 'fault-tolerance']
+authors: ['lucas-andrade']
+draft: true
+summary: 'What if the best way to make your system reliable is to intentionally break it? Chaos engineering is exactly that: controlled destruction that reveals weaknesses before real failures do.'
+images: ['/static/images/chaos-engineering.png']
+---
+
+Here's a counterintuitive idea: the best way to trust your system is to try to break it.
+
+I know it sounds backwards. We spend all this time building things, writing tests, setting up monitoring... and now I'm telling you to go in there and start pulling cables? Kind of. But with a method.
+
+Chaos engineering is the discipline of experimenting on a system to build confidence in its ability to withstand turbulent conditions in production. In other words: break things on purpose, in a controlled way, so you find the weaknesses before your users do.
+
+## Why Would Anyone Do This?
+
+Think about it. How do you know your system handles a database going down? You could read the code and say "yeah, we have fallbacks." But have you actually tested it? In production? Under real load?
+
+Most teams haven't. And that's exactly when things blow up -- at 3 AM on a Friday, when half the team is on vacation.
+
+Here's the thing: **your system WILL fail**. Servers crash, networks partition, disks fill up, dependencies go down. The question isn't "if" but "when." Chaos engineering shifts the discovery of these failures from 3 AM incidents to controlled experiments during business hours.
+
+```
+Traditional approach:
+  Build → Deploy → Hope for the best → Incident at 3 AM → Panic
+
+Chaos engineering approach:
+  Build → Deploy → Break it on purpose → Fix weaknesses → Sleep well
+```
+
+## Netflix and the Chaos Monkey
+
+You can't talk about chaos engineering without mentioning Netflix. They basically invented the discipline.
+
+Back in 2010, Netflix migrated to AWS and quickly realized that cloud infrastructure is inherently unreliable. Servers can disappear at any moment. Instead of fighting this, they embraced it.
+
+They created **Chaos Monkey** -- a tool that randomly terminates instances in production during business hours. Yes, production. The logic was brilliant: if their engineers are forced to build systems that survive random instance failures every single day, then when actual failures happen, the system handles them gracefully.
+
+```
+Chaos Monkey's thought process:
+
+"Oh, that's a nice production server you have there.
+ It would be a shame if something... happened to it."
+
+*terminates instance*
+
+"Let's see if your system can handle it."
+```
+
+Netflix later expanded this into a whole suite called the **Simian Army**:
+
+- **Chaos Monkey:** Kills random instances
+- **Latency Monkey:** Introduces artificial delays
+- **Chaos Gorilla:** Takes down entire availability zones
+- **Chaos Kong:** Simulates the failure of an entire AWS region
+
+And here's the crazy part: they run these in production. Because that's the only environment that truly matters.
+
+## The Principles of Chaos Engineering
+
+Chaos engineering isn't just randomly breaking stuff. There's a methodology. Netflix formalized this into a set of principles:
+
+### 1. Build a Hypothesis Around Steady State
+
+Before breaking anything, define what "normal" looks like. What are your key metrics? What does your system look like when it's healthy?
+
+```
+Steady state definition example:
+- API response time: p99 < 200ms
+- Error rate: < 0.1%
+- Orders processed: > 1000/minute
+- User-facing errors: 0
+```
+
+### 2. Vary Real-World Events
+
+Simulate things that actually happen in production:
+
+- Server crashes
+- Network latency spikes
+- Disk filling up
+- DNS failures
+- Dependency timeouts
+- CPU/memory exhaustion
+- Clock skew between services
+
+### 3. Run Experiments in Production
+
+This is the controversial one. Staging environments don't have real traffic patterns, real data volumes, or real user behavior. If you want real confidence, you need real conditions.
+
+Obviously, start small. Don't take down your main database on day one.
+
+### 4. Automate and Run Continuously
+
+One-off experiments are nice, but the real value comes from running them continuously. Systems change, new code gets deployed, infrastructure evolves. What worked last month might not work today.
+
+### 5. Minimize Blast Radius
+
+Start with the smallest possible impact. Can you run the experiment on 1% of traffic first? Can you have an automatic kill switch? Always have a way to stop the experiment if things go south.
+
+## Blast Radius: Your Safety Net
+
+This deserves its own section because it's the most important concept for doing chaos engineering safely.
+
+**Blast radius** is the potential impact zone of your experiment. You always want to start small and expand gradually.
+
+```
+Blast radius progression:
+
+Level 1: Single instance in dev environment
+Level 2: Single instance in staging
+Level 3: Single instance in production (canary)
+Level 4: Small percentage of production traffic
+Level 5: Entire availability zone
+Level 6: Entire region (you better know what you're doing)
+```
+
+Think of it like controlled demolition. You don't start by bringing down the whole building. You start with one wall, see what happens, learn, and then expand.
+
+### Abort Conditions
+
+Always define these BEFORE the experiment:
+
+```yaml
+experiment: kill-payment-service-instance
+blast_radius: 1 instance out of 10
+duration: 30 minutes
+abort_conditions:
+  - error_rate > 1%
+  - p99_latency > 500ms
+  - customer_complaints > 0
+  - revenue_impact > $100
+rollback_plan: restart instance from AMI
+```
+
+## Game Days: Chaos as a Team Sport
+
+A **game day** is a planned event where the team deliberately injects failures and practices their response. Think of it as a fire drill for your infrastructure.
+
+### How to Run a Game Day
+
+**Before:**
+1. Pick a specific scenario (e.g., "What happens if Redis goes down?")
+2. Form a hypothesis ("Our cache fallback should kick in, latency increases by 20%, no data loss")
+3. Define blast radius and abort conditions
+4. Make sure everyone knows the plan
+5. Have rollback procedures ready
+
+**During:**
+1. Inject the failure
+2. Observe system behavior
+3. Watch dashboards and alerts
+4. Note what worked and what didn't
+5. Stop if abort conditions are hit
+
+**After:**
+1. Document findings
+2. Compare results to hypothesis
+3. Create action items for gaps found
+4. Share learnings with the broader team
+
+### A Real Game Day Script
+
+Here's a simplified example of how you might run a game day experiment:
+
+```python
+import requests
+import time
+import subprocess
+from datetime import datetime
+
+class ChaosExperiment:
+    def __init__(self, name, blast_radius, duration_minutes):
+        self.name = name
+        self.blast_radius = blast_radius
+        self.duration = duration_minutes * 60
+        self.start_time = None
+        self.metrics = []
+
+    def check_steady_state(self):
+        """Verify system is healthy before starting."""
+        response = requests.get("http://api.internal/health")
+        metrics = requests.get("http://metrics.internal/api/v1/query",
+            params={"query": "http_error_rate"}).json()
+
+        error_rate = float(metrics["data"]["result"][0]["value"][1])
+
+        assert response.status_code == 200, "System not healthy"
+        assert error_rate < 0.01, f"Error rate too high: {error_rate}"
+        print(f"[{datetime.now()}] Steady state verified. Error rate: {error_rate}")
+
+    def inject_failure(self):
+        """Override in subclass with specific failure injection."""
+        raise NotImplementedError
+
+    def rollback(self):
+        """Override in subclass with rollback procedure."""
+        raise NotImplementedError
+
+    def should_abort(self):
+        """Check if we need to stop the experiment."""
+        metrics = requests.get("http://metrics.internal/api/v1/query",
+            params={"query": "http_error_rate"}).json()
+        error_rate = float(metrics["data"]["result"][0]["value"][1])
+
+        if error_rate > 0.05:
+            print(f"ABORT: Error rate {error_rate} exceeds threshold")
+            return True
+        return False
+
+    def run(self):
+        print(f"Starting experiment: {self.name}")
+        print(f"Blast radius: {self.blast_radius}")
+        print(f"Duration: {self.duration}s")
+
+        # Step 1: Verify steady state
+        self.check_steady_state()
+
+        # Step 2: Inject failure
+        self.inject_failure()
+        self.start_time = time.time()
+
+        # Step 3: Monitor
+        try:
+            while time.time() - self.start_time < self.duration:
+                if self.should_abort():
+                    print("Aborting experiment!")
+                    break
+                time.sleep(10)
+        finally:
+            # Step 4: Always rollback
+            self.rollback()
+            print("Experiment complete. Rollback executed.")
+
+
+class KillInstanceExperiment(ChaosExperiment):
+    def __init__(self, instance_id):
+        super().__init__(
+            name="Kill single instance",
+            blast_radius="1 instance",
+            duration_minutes=15
+        )
+        self.instance_id = instance_id
+
+    def inject_failure(self):
+        print(f"Terminating instance: {self.instance_id}")
+        subprocess.run([
+            "aws", "ec2", "terminate-instances",
+            "--instance-ids", self.instance_id
+        ])
+
+    def rollback(self):
+        print("Auto-scaling group will launch replacement instance")
+        # ASG handles recovery automatically
+
+
+# Run it
+experiment = KillInstanceExperiment("i-0abc123def456")
+experiment.run()
+```
+
+## Practical Chaos Experiments You Can Run
+
+Let me give you some experiments you can start with, from easy to advanced.
+
+### Experiment 1: Kill a Service Instance
+
+**Difficulty:** Beginner
+
+The classic. Terminate one instance of a service and see if the system recovers.
+
+```bash
+# Kubernetes: delete a pod
+kubectl delete pod my-service-abc123 -n production
+
+# Watch it recover
+kubectl get pods -n production -w
+```
+
+**What you're testing:** Auto-healing, load balancer health checks, graceful degradation.
+
+**What usually goes wrong:** Connections in progress get dropped. Health check intervals are too long. Auto-scaling is too slow.
+
+### Experiment 2: Introduce Network Latency
+
+**Difficulty:** Intermediate
+
+Add artificial delay to network calls and see how your timeouts and circuit breakers handle it.
+
+```bash
+# Using tc (traffic control) to add 500ms latency
+sudo tc qdisc add dev eth0 root netem delay 500ms 100ms
+
+# Watch your dashboards light up
+
+# Remove the latency
+sudo tc qdisc del dev eth0 root
+```
+
+**What you're testing:** Timeout configurations, circuit breaker thresholds, user experience under degraded conditions.
+
+**What usually goes wrong:** Timeouts are set too high (or not set at all). Circuit breakers don't trip. Cascading slowdowns across services.
+
+### Experiment 3: Fill the Disk
+
+**Difficulty:** Intermediate
+
+```bash
+# Create a large file to fill disk
+dd if=/dev/zero of=/tmp/fill-disk bs=1M count=10000
+
+# See what breaks when disk is full
+
+# Clean up
+rm /tmp/fill-disk
+```
+
+**What you're testing:** Log rotation, disk space alerts, application behavior when writes fail.
+
+**What usually goes wrong:** Logs fill the disk first. Database can't write WAL. Application crashes with cryptic errors instead of graceful degradation.
+
+### Experiment 4: DNS Failure
+
+**Difficulty:** Advanced
+
+```bash
+# Block DNS resolution for a specific service
+echo "127.0.0.1 payment-service.internal" >> /etc/hosts
+
+# Watch how your system handles unresolvable dependencies
+
+# Rollback
+# Remove the line from /etc/hosts
+```
+
+**What you're testing:** DNS caching, fallback mechanisms, error handling for unresolvable hosts.
+
+**What usually goes wrong:** No DNS caching. Retry storms. Services hang waiting for DNS resolution instead of timing out.
+
+### Experiment 5: Dependency Failure
+
+**Difficulty:** Advanced
+
+Simulate a downstream service going completely dark.
+
+```bash
+# Block traffic to a dependency using iptables
+sudo iptables -A OUTPUT -d payment-service.internal -j DROP
+
+# Everything to that service now times out
+
+# Rollback
+sudo iptables -D OUTPUT -d payment-service.internal -j DROP
+```
+
+**What you're testing:** Circuit breakers, fallback strategies, graceful degradation, queue-based resilience.
+
+## Tools of the Trade
+
+You don't have to build everything from scratch. Here are the main tools:
+
+### Chaos Monkey (Netflix)
+
+The OG. Part of the Netflix Simian Army. Randomly terminates instances in your AWS environment.
+
+```yaml
+# Chaos Monkey configuration
+simianarmy:
+  chaos:
+    enabled: true
+    leashed: false
+    ASG:
+      enabled: true
+      probability: 1.0
+      maxTerminationsPerDay: 2
+    schedule:
+      # Only during business hours
+      startHour: 9
+      endHour: 17
+      timezone: America/Los_Angeles
+```
+
+### Gremlin
+
+A commercial platform that makes chaos engineering accessible. Think of it as "chaos as a service."
+
+- **Resource attacks:** CPU, memory, disk, I/O
+- **Network attacks:** Latency, packet loss, DNS failure, blackhole
+- **State attacks:** Process killing, time travel, shutdown
+
+Nice UI, good blast radius controls, built-in safety. Great for teams just getting started.
+
+### Litmus (for Kubernetes)
+
+Open-source chaos engineering for Kubernetes environments. Uses CRDs (Custom Resource Definitions) to define experiments.
+
+```yaml
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: payment-service-chaos
+  namespace: production
+spec:
+  appinfo:
+    appns: production
+    applabel: app=payment-service
+    appkind: deployment
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: '30'
+            - name: CHAOS_INTERVAL
+              value: '10'
+            - name: FORCE
+              value: 'false'
+```
+
+### Chaos Toolkit
+
+Open-source, declarative, works with any infrastructure.
+
+```json
+{
+  "title": "Can our app survive a database failure?",
+  "description": "Verify that our application degrades gracefully when the database is unavailable",
+  "steady-state-hypothesis": {
+    "title": "Application is healthy",
+    "probes": [
+      {
+        "type": "probe",
+        "name": "app-responds-normally",
+        "tolerance": 200,
+        "provider": {
+          "type": "http",
+          "url": "http://localhost:8080/health"
+        }
+      }
+    ]
+  },
+  "method": [
+    {
+      "type": "action",
+      "name": "stop-database",
+      "provider": {
+        "type": "process",
+        "path": "docker",
+        "arguments": ["stop", "postgres"]
+      }
+    }
+  ],
+  "rollbacks": [
+    {
+      "type": "action",
+      "name": "restart-database",
+      "provider": {
+        "type": "process",
+        "path": "docker",
+        "arguments": ["start", "postgres"]
+      }
+    }
+  ]
+}
+```
+
+### Quick Tool Comparison
+
+```
+Tool            | Type        | Best For
+----------------|-------------|---------------------------
+Chaos Monkey    | Open source | AWS instance termination
+Gremlin         | Commercial  | Full-featured, easy to use
+Litmus          | Open source | Kubernetes-native chaos
+Chaos Toolkit   | Open source | Declarative, multi-platform
+Toxiproxy       | Open source | Network-level failures
+ChaosBlade      | Open source | Rich fault injection
+```
+
+## Real-World Lessons
+
+### The S3 Outage (2017)
+
+In February 2017, a typo in an AWS S3 command took down a huge chunk of the internet. Sites that depended on S3 (including some that you'd think would be more resilient) went down.
+
+The lesson? If you haven't tested what happens when S3 is unavailable, you don't actually know if your system can handle it. Companies that had practiced this scenario recovered in minutes. Others were down for hours.
+
+### The Stripe Chaos Engineering Culture
+
+Stripe regularly runs what they call "failure Fridays." They simulate failures in production every week and have their engineers practice responding. This culture of regular practice means when real incidents happen, their response is almost muscle memory.
+
+### Google's DiRT (Disaster Recovery Testing)
+
+Google runs annual DiRT exercises that simulate large-scale disasters. They've intentionally cut power to data centers, simulated earthquake damage, and tested what happens when key personnel are unavailable. The result? When real disasters happen, Google's recovery is remarkably smooth.
+
+## Getting Started: A Realistic Roadmap
+
+You don't need to go from zero to killing production instances overnight. Here's a sane progression:
+
+### Phase 1: Understand Your System
+- Map your dependencies
+- Define steady state metrics
+- Set up proper monitoring and alerting
+- Document your architecture
+
+### Phase 2: Start in Development
+- Kill containers in Docker Compose
+- Add latency to local service calls
+- Simulate dependency failures with mocks
+- Build confidence with the methodology
+
+### Phase 3: Graduate to Staging
+- Run experiments in a staging environment
+- Practice game days with the team
+- Build automated chaos experiments
+- Develop runbooks from findings
+
+### Phase 4: Production Chaos
+- Start with minimal blast radius (1 instance, 1% traffic)
+- Run during business hours with the team ready
+- Have automatic abort conditions
+- Gradually increase scope as confidence grows
+
+### Phase 5: Continuous Chaos
+- Automate experiments to run regularly
+- Integrate chaos tests into CI/CD pipeline
+- Run Chaos Monkey-style random failures daily
+- Make resilience part of your engineering culture
+
+## Common Mistakes
+
+1. **Starting too big:** Don't kill your database in production on day one. Start small.
+2. **No steady state definition:** If you don't know what normal looks like, you can't tell if your experiment caused problems.
+3. **No abort conditions:** Always have a way to stop. Always.
+4. **Skipping the hypothesis:** "Let's see what happens" is not an experiment. Define what you expect to happen first.
+5. **Not sharing results:** The whole point is organizational learning. Share findings broadly.
+6. **Only running once:** Systems change. What was resilient last month might not be today.
+7. **Treating it as testing:** Chaos engineering is about discovering unknown unknowns, not verifying known behaviors.
+
+---
+
+Chaos engineering might feel scary at first. Breaking things on purpose goes against every instinct we have as engineers. But here's the reality: your system is going to break whether you're ready or not. The only question is whether you discover the weaknesses on your terms, during business hours with the team ready, or at 3 AM during a real incident.
+
+Start small. Run your first game day. Kill one pod and see what happens. I promise you'll find something interesting -- and you'll be glad you found it before your users did.
+
+Questions or want to share your chaos engineering stories? Drop them in the comments!
+
+Until next time!

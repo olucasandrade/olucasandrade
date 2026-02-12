@@ -29,7 +29,7 @@ export default async function HomeLayout({ posts, params: { locale } }: HomeProp
     <>
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
         <LayoutHeader title={t('greeting')} />
-        <PostList posts={posts} locale={locale} t={t} maxDisplay={MAX_DISPLAY} />
+        <PostList posts={posts} locale={locale} maxDisplay={MAX_DISPLAY} />
       </div>
       {posts.length > MAX_DISPLAY && (
         <div className="flex justify-end text-base font-medium leading-6">

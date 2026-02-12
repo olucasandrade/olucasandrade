@@ -11,6 +11,9 @@ import siteMetadata from '@/data/siteMetadata'
 import { maintitle, maindescription } from '@/data/localeMetadata'
 import { ThemeProvider } from '@/components/theme/ThemeContext'
 import { LocaleProvider } from '@/components/locale/LocaleProvider'
+import CustomCursor from '@/components/ui/CustomCursor'
+import PageTransition from '@/components/animations/PageTransition'
+import JsonLd from '@/components/seo/JsonLd'
 import { Metadata } from 'next'
 import { dir } from 'i18next'
 import { LocaleTypes, locales } from './i18n/settings'
@@ -105,11 +108,16 @@ export default async function RootLayout({
         <LocaleProvider initialLocale={locale}>
           <ThemeProvider>
             <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
+            <CustomCursor />
+            <JsonLd type="website" locale={locale} />
+            <JsonLd type="person" locale={locale} />
             <SectionContainer>
               <div className="flex h-screen flex-col justify-between font-sans">
                 <SearchProvider>
                   <Header />
-                  <main className="mb-auto">{children}</main>
+                  <main className="mb-auto">
+                    <PageTransition>{children}</PageTransition>
+                  </main>
                 </SearchProvider>
                 <Footer />
               </div>

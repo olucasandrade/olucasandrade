@@ -50,6 +50,24 @@ module.exports = {
         },
         gray: colors.gray,
       },
+      keyframes: {
+        float: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-6px)' },
+        },
+        'gradient-shift': {
+          '0%, 100%': { backgroundPosition: '0% 50%' },
+          '50%': { backgroundPosition: '100% 50%' },
+        },
+      },
+      animation: {
+        float: 'float 3s ease-in-out infinite',
+        'gradient-shift': 'gradient-shift 6s ease infinite',
+      },
+      boxShadow: {
+        'primary-glow': '0 0 20px rgba(22, 163, 74, 0.15)',
+        'primary-glow-lg': '0 0 40px rgba(22, 163, 74, 0.2)',
+      },
       typography: ({ theme }) => ({
         DEFAULT: {
           css: {

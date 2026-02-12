@@ -1,0 +1,286 @@
+---
+title: 'Circuit Breaker Pattern: When to Let Things Fail Gracefully'
+date: '2025-01-25'
+language: en
+tags: ['system-design', 'fault-tolerance', 'resilience', 'patterns']
+authors: ['lucas-andrade']
+draft: true
+summary: 'When a service is down, hammering it with requests just makes things worse. The circuit breaker pattern teaches your system when to stop trying and fail gracefully.'
+images: ['/static/images/circuit-breaker.png']
+---
+
+Ever had a service go down and bring everything else with it? Cascading failures are nasty. Your payment service fails, so your order service keeps retrying, which exhausts your connection pool, which takes down your whole app.
+
+The circuit breaker pattern prevents this.
+
+## The Electrical Analogy
+
+Just like electrical circuit breakers protect your house from power surges, software circuit breakers protect your system from cascading failures.
+
+```
+Normal electricity flow → Surge detected → Circuit BREAKS → No more damage
+Normal requests → Failures detected → Circuit OPENS → No more requests
+```
+
+## Circuit Breaker States
+
+```
+        ┌─────────────────────┐
+        │       CLOSED        │ ← Normal operation
+        │  (requests pass)    │
+        └──────────┬──────────┘
+                   │ failures > threshold
+                   ▼
+        ┌─────────────────────┐
+        │        OPEN         │ ← Fail fast
+        │  (requests blocked) │
+        └──────────┬──────────┘
+                   │ timeout expires
+                   ▼
+        ┌─────────────────────┐
+        │     HALF-OPEN       │ ← Testing
+        │  (limited requests) │
+        └──────────┬──────────┘
+                   │ success → CLOSED
+                   │ failure → OPEN
+```
+
+### CLOSED
+Normal state. Requests flow through. Failures are counted.
+
+### OPEN
+Circuit is tripped. Requests fail immediately without calling the downstream service. This gives the failing service time to recover.
+
+### HALF-OPEN
+After a timeout, circuit allows a limited number of test requests. If they succeed, circuit closes. If they fail, circuit opens again.
+
+## Implementation
+
+```python
+import time
+from enum import Enum
+from threading import Lock
+
+class CircuitState(Enum):
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
+
+class CircuitBreaker:
+    def __init__(
+        self,
+        failure_threshold=5,
+        recovery_timeout=30,
+        half_open_max_calls=3
+    ):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.half_open_max_calls = half_open_max_calls
+
+        self.state = CircuitState.CLOSED
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.half_open_calls = 0
+        self.lock = Lock()
+
+    def call(self, func, *args, **kwargs):
+        with self.lock:
+            if self.state == CircuitState.OPEN:
+                if self._should_try_reset():
+                    self.state = CircuitState.HALF_OPEN
+                    self.half_open_calls = 0
+                else:
+                    raise CircuitOpenError("Circuit is open")
+
+            if self.state == CircuitState.HALF_OPEN:
+                if self.half_open_calls >= self.half_open_max_calls:
+                    raise CircuitOpenError("Circuit is half-open, max calls reached")
+                self.half_open_calls += 1
+
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise
+
+    def _should_try_reset(self):
+        return (
+            self.last_failure_time and
+            time.time() - self.last_failure_time >= self.recovery_timeout
+        )
+
+    def _on_success(self):
+        with self.lock:
+            if self.state == CircuitState.HALF_OPEN:
+                self.state = CircuitState.CLOSED
+            self.failure_count = 0
+
+    def _on_failure(self):
+        with self.lock:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+
+            if self.state == CircuitState.HALF_OPEN:
+                self.state = CircuitState.OPEN
+            elif self.failure_count >= self.failure_threshold:
+                self.state = CircuitState.OPEN
+```
+
+### Usage
+
+```python
+payment_circuit = CircuitBreaker(failure_threshold=5, recovery_timeout=30)
+
+def process_payment(order_id, amount):
+    try:
+        return payment_circuit.call(
+            payment_service.charge,
+            order_id,
+            amount
+        )
+    except CircuitOpenError:
+        # Fallback: queue for later processing
+        return queue_payment_for_retry(order_id, amount)
+```
+
+## Fallback Strategies
+
+When the circuit is open, what do you do?
+
+### Return Cached Data
+```python
+def get_product(product_id):
+    try:
+        return circuit.call(product_service.get, product_id)
+    except CircuitOpenError:
+        return cache.get(f"product:{product_id}")  # Stale but available
+```
+
+### Return Default Value
+```python
+def get_recommendations(user_id):
+    try:
+        return circuit.call(recommendation_service.get, user_id)
+    except CircuitOpenError:
+        return DEFAULT_RECOMMENDATIONS  # Generic recommendations
+```
+
+### Queue for Later
+```python
+def send_notification(user_id, message):
+    try:
+        return circuit.call(notification_service.send, user_id, message)
+    except CircuitOpenError:
+        queue.push({"user_id": user_id, "message": message})
+        return {"status": "queued"}
+```
+
+### Fail Fast
+```python
+def critical_operation():
+    try:
+        return circuit.call(critical_service.execute)
+    except CircuitOpenError:
+        raise ServiceUnavailableError("Please try again later")
+```
+
+## Configuration Tips
+
+### Failure Threshold
+- Too low: Circuit opens on minor hiccups
+- Too high: Doesn't protect fast enough
+- Start with 5-10 failures
+
+### Recovery Timeout
+- Too short: Overwhelms recovering service
+- Too long: Keeps circuit open unnecessarily
+- Start with 30-60 seconds
+
+### Half-Open Calls
+- Too few: Takes long to recover
+- Too many: Can overwhelm recovering service
+- Start with 1-3 calls
+
+## Libraries
+
+Don't implement from scratch in production. Use battle-tested libraries:
+
+**Python:**
+```python
+from circuitbreaker import circuit
+
+@circuit(failure_threshold=5, recovery_timeout=30)
+def call_external_service():
+    return requests.get("https://api.example.com")
+```
+
+**Java (Resilience4j):**
+```java
+CircuitBreaker circuitBreaker = CircuitBreaker.ofDefaults("myService");
+String result = circuitBreaker.executeSupplier(() -> service.call());
+```
+
+**JavaScript (Opossum):**
+```javascript
+const CircuitBreaker = require('opossum');
+const breaker = new CircuitBreaker(asyncFunction, { timeout: 3000 });
+breaker.fire().then(console.log).catch(console.error);
+```
+
+## Monitoring
+
+You MUST monitor your circuit breakers:
+
+```python
+# Prometheus metrics
+circuit_state = Gauge('circuit_state', 'Circuit breaker state', ['service'])
+circuit_failures = Counter('circuit_failures', 'Number of failures', ['service'])
+circuit_opens = Counter('circuit_opens', 'Times circuit opened', ['service'])
+
+def update_metrics(circuit, service_name):
+    circuit_state.labels(service=service_name).set(
+        1 if circuit.state == CircuitState.OPEN else 0
+    )
+```
+
+Alert on:
+- Circuit opening (service is failing)
+- Circuit staying open too long (service not recovering)
+- High failure rate even when closed
+
+## Circuit Breaker vs Retry
+
+They work together, not against each other:
+
+```
+Request → Retry (handles transient failures)
+       → Circuit Breaker (handles sustained failures)
+       → Service
+```
+
+```python
+@retry(max_attempts=3, backoff=exponential)
+@circuit(failure_threshold=5)
+def call_service():
+    return service.call()
+```
+
+## Common Mistakes
+
+1. **Not having fallbacks:** Circuit opens, nothing works
+2. **Sharing circuits incorrectly:** All endpoints use same circuit
+3. **Not monitoring:** Circuit is open and nobody knows
+4. **Too aggressive thresholds:** Opens on first failure
+5. **Forgetting half-open:** Circuit never recovers
+
+---
+
+Circuit breakers are your first line of defense against cascading failures. They're simple in concept but make a huge difference in production stability.
+
+Start with conservative settings, monitor closely, and adjust based on your specific failure patterns.
+
+Questions? Drop them in the comments!
+
+Until next time!

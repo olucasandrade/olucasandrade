@@ -1,0 +1,424 @@
+---
+title: 'Data Consistency and the CAP Theorem in Practice'
+date: '2025-02-07'
+language: en
+tags: ['system-design', 'distributed-systems', 'databases', 'consistency']
+authors: ['lucas-andrade']
+draft: true
+summary: 'You can have consistency, availability, and partition tolerance - just not all three at the same time. The CAP theorem is one of the most misunderstood concepts in system design. Let me clear it up with real examples.'
+images: ['/static/images/system_design.webp']
+---
+
+Have you ever stopped to think about what happens when two users try to buy the last item in stock at the exact same time? One of them has to lose. But how does the system decide? And what if the databases on different servers disagree about how many items are left?
+
+Welcome to the world of data consistency in distributed systems. It's messy, it's tricky, and the CAP theorem is your guide through it.
+
+## The CAP Theorem
+
+In 2000, Eric Brewer proposed that a distributed system can only guarantee two out of three properties:
+
+```
+        Consistency (C)
+           /     \
+          /       \
+         /    pick \
+        /    two    \
+       /             \
+Availability (A) ── Partition
+                     Tolerance (P)
+```
+
+### Consistency (C)
+
+Every read receives the most recent write. All nodes see the same data at the same time.
+
+```
+User writes: balance = $100
+
+Node A: balance = $100 ✓
+Node B: balance = $100 ✓
+Node C: balance = $100 ✓
+
+Every node agrees. That's consistency.
+```
+
+### Availability (A)
+
+Every request receives a response (not an error), even if it might not have the most recent data.
+
+```
+User reads balance:
+Node A: "Your balance is $100" ✓ (responds, even if data might be stale)
+
+Node A NEVER says: "Sorry, I can't answer right now" ✗
+```
+
+### Partition Tolerance (P)
+
+The system continues to operate even when network communication between nodes fails.
+
+```
+Normal:
+Node A ←──→ Node B ←──→ Node C
+
+Partition:
+Node A ←──→ Node B    ✗    Node C
+         (can't reach C)
+```
+
+## Why You Can't Have All Three
+
+Here's the thing: **network partitions will happen**. Cables get cut, switches fail, data centers lose connectivity. You can't avoid P.
+
+So the real choice is: **CP or AP?**
+
+```
+Partition happens:
+Node A ←─────── ✗ ────────→ Node B
+
+CP (Consistency + Partition Tolerance):
+  Node A: "I can't confirm this write until I sync with B"
+  → Refuses requests until partition heals (sacrifices Availability)
+
+AP (Availability + Partition Tolerance):
+  Node A: "I'll accept this write and sync later"
+  → Might have different data than B (sacrifices Consistency)
+```
+
+### Real Example: Bank Transfer
+
+```
+Alice sends $50 to Bob.
+
+CP approach (like traditional banks):
+  1. Lock Alice's account
+  2. Lock Bob's account
+  3. If can't reach other node → REJECT transaction
+  4. Both agree → Complete transfer
+  Result: Transaction might fail, but balances are always correct
+
+AP approach (imagine if banks did this):
+  1. Accept Alice's transfer on Node A
+  2. Accept Bob's view on Node B
+  3. Nodes are partitioned... Bob's balance shows old amount
+  4. When partition heals, resolve conflicts
+  Result: Transaction always succeeds, but balances might be temporarily wrong
+```
+
+For money? You obviously want CP. For social media likes? AP is totally fine.
+
+## Strong vs Eventual Consistency
+
+### Strong Consistency
+
+After a write completes, all subsequent reads will return that value. Period.
+
+```python
+# Strong consistency
+def transfer_money(from_account, to_account, amount):
+    with distributed_lock(from_account, to_account):
+        # All nodes must agree before returning
+        balance = get_balance(from_account)  # Always latest value
+
+        if balance < amount:
+            raise InsufficientFunds()
+
+        debit(from_account, amount)
+        credit(to_account, amount)
+        # Both writes confirmed on all replicas before returning
+```
+
+**Cost:** Higher latency (must wait for all nodes to agree), lower availability during partitions.
+
+**Use when:** Financial transactions, inventory management, anything where stale data causes real problems.
+
+### Eventual Consistency
+
+If no new updates are made, eventually all nodes will have the same data. "Eventually" might be milliseconds or seconds.
+
+```python
+# Eventual consistency
+def add_like(post_id, user_id):
+    # Write to local node, replicate later
+    local_db.increment(f"likes:{post_id}")
+    replication_queue.push({
+        "action": "increment_like",
+        "post_id": post_id,
+        "user_id": user_id
+    })
+    # Return immediately, other nodes will catch up
+
+def get_likes(post_id):
+    # Might return slightly stale count
+    return local_db.get(f"likes:{post_id}")
+```
+
+**Cost:** Reads might return stale data temporarily.
+
+**Use when:** Social media feeds, view counts, recommendations, analytics.
+
+### Consistency Spectrum
+
+It's not just "strong" or "eventual." There's a whole spectrum:
+
+```
+Strong ──────────────────────────────→ Weak
+
+Linearizable   Sequential   Causal   Eventual
+    │              │           │         │
+    │              │           │         │
+All nodes      Operations   Related    Eventually
+agree on       appear in    events     all nodes
+every read     same order   ordered    agree
+```
+
+## Consistency Patterns in Practice
+
+### Read-Your-Own-Writes
+
+After writing, the same user always sees their own write. Other users might see stale data.
+
+```python
+def update_profile(user_id, new_name):
+    # Write to primary
+    primary_db.update(user_id, {"name": new_name})
+
+    # Set session hint to read from primary for this user
+    session.set("read_from_primary_until", time.time() + 5)
+
+def get_profile(user_id, requesting_user):
+    if requesting_user == user_id and session.get("read_from_primary_until", 0) > time.time():
+        # Read own profile from primary (guaranteed fresh)
+        return primary_db.get(user_id)
+    else:
+        # Read from replica (might be slightly stale)
+        return replica_db.get(user_id)
+```
+
+### Monotonic Reads
+
+Once you've seen a value, you'll never see an older value. No going backwards.
+
+```python
+class MonotonicReadClient:
+    def __init__(self):
+        self.last_timestamp = {}
+
+    def read(self, key):
+        # Read from a replica that's at least as fresh as our last read
+        for replica in replicas:
+            value, timestamp = replica.get_with_timestamp(key)
+            if timestamp >= self.last_timestamp.get(key, 0):
+                self.last_timestamp[key] = timestamp
+                return value
+
+        # Fall back to primary if no replica is fresh enough
+        return primary.get(key)
+```
+
+### Quorum Reads and Writes
+
+Use a majority of nodes to ensure consistency.
+
+```
+N = total nodes = 5
+W = write quorum = 3 (write must succeed on 3 nodes)
+R = read quorum = 3  (read from 3 nodes, take latest)
+
+W + R > N → Guaranteed to read latest write
+3 + 3 > 5 → ✓
+
+        Write (W=3)           Read (R=3)
+Node 1: ✓ (value=42)         ✓ (value=42)
+Node 2: ✓ (value=42)         ✓ (value=42)
+Node 3: ✓ (value=42)         ✗ (not queried)
+Node 4: ✗ (not yet)          ✓ (value=OLD)
+Node 5: ✗ (not yet)          ✗ (not queried)
+
+Read sees value=42 from majority → returns 42 ✓
+```
+
+```python
+# Quorum write
+def quorum_write(key, value, replicas, quorum_size):
+    acks = 0
+    for replica in replicas:
+        try:
+            replica.write(key, value, timestamp=time.time())
+            acks += 1
+        except ConnectionError:
+            continue
+
+    if acks < quorum_size:
+        raise WriteFailedError("Could not reach write quorum")
+
+    return True
+
+# Quorum read
+def quorum_read(key, replicas, quorum_size):
+    responses = []
+    for replica in replicas:
+        try:
+            value, ts = replica.read(key)
+            responses.append((value, ts))
+        except ConnectionError:
+            continue
+
+    if len(responses) < quorum_size:
+        raise ReadFailedError("Could not reach read quorum")
+
+    # Return the value with the latest timestamp
+    return max(responses, key=lambda x: x[1])[0]
+```
+
+## Real-World Examples
+
+### Amazon DynamoDB
+
+AP system with tunable consistency.
+
+```python
+import boto3
+
+dynamodb = boto3.resource('dynamodb')
+table = dynamodb.Table('Products')
+
+# Eventually consistent read (default, cheaper, faster)
+response = table.get_item(
+    Key={'product_id': '123'},
+    ConsistentRead=False
+)
+
+# Strongly consistent read (costs 2x, but guaranteed latest)
+response = table.get_item(
+    Key={'product_id': '123'},
+    ConsistentRead=True
+)
+```
+
+### PostgreSQL with Replication
+
+CP system by default (single primary).
+
+```sql
+-- Write goes to primary
+INSERT INTO orders (id, status) VALUES (1, 'created');
+
+-- Read from replica (might be slightly behind)
+SELECT * FROM orders WHERE id = 1;
+-- Could return empty if replication lag exists!
+
+-- Read from primary (always consistent)
+SELECT * FROM orders WHERE id = 1;
+-- Always returns the row
+```
+
+### Redis Cluster
+
+AP by default. Writes to primary, async replication to replicas.
+
+```python
+# Write to primary
+redis.set("inventory:item-123", 5)
+
+# If primary fails before replicating...
+# Replica becomes primary with old value
+# That last write is LOST
+
+# For critical data, use WAIT
+redis.set("inventory:item-123", 5)
+redis.wait(1, timeout=1000)  # Wait for at least 1 replica to acknowledge
+```
+
+### MongoDB
+
+Tunable consistency with write concerns and read preferences.
+
+```javascript
+// Eventual consistency (fast)
+db.collection('products').find(
+    { category: 'electronics' },
+    { readPreference: 'secondaryPreferred' }
+);
+
+// Strong consistency (slower but guaranteed)
+db.collection('orders').insertOne(
+    { item: 'laptop', qty: 1 },
+    { writeConcern: { w: 'majority', j: true } }
+);
+```
+
+## Conflict Resolution
+
+When you choose AP, you need to handle conflicts when nodes reconnect.
+
+### Last Write Wins (LWW)
+
+Simple but can lose data.
+
+```python
+def resolve_conflict(value_a, timestamp_a, value_b, timestamp_b):
+    if timestamp_a > timestamp_b:
+        return value_a
+    return value_b
+```
+
+### Merge
+
+Application-specific conflict resolution.
+
+```python
+def resolve_shopping_cart(cart_a, cart_b):
+    # Union of both carts (no items lost)
+    merged = {}
+    for item, qty in {**cart_a, **cart_b}.items():
+        merged[item] = max(cart_a.get(item, 0), cart_b.get(item, 0))
+    return merged
+```
+
+### CRDTs (Conflict-free Replicated Data Types)
+
+Data structures that can always be merged without conflicts.
+
+```python
+# G-Counter: grow-only counter
+# Each node has its own counter
+class GCounter:
+    def __init__(self, node_id, nodes):
+        self.node_id = node_id
+        self.counters = {n: 0 for n in nodes}
+
+    def increment(self):
+        self.counters[self.node_id] += 1
+
+    def value(self):
+        return sum(self.counters.values())
+
+    def merge(self, other):
+        for node, count in other.counters.items():
+            self.counters[node] = max(self.counters[node], count)
+```
+
+## How to Choose
+
+```
+Question                              │ Answer → Direction
+──────────────────────────────────────┼─────────────────────
+Can users see stale data briefly?     │ Yes → AP / Eventual
+Can the system reject writes?         │ Yes → CP / Strong
+Is this financial data?               │ → Strong consistency
+Is this social media content?         │ → Eventual consistency
+Is this real-time inventory?          │ → It depends (tunable)
+```
+
+My rule of thumb: **start with eventual consistency unless you have a specific reason for strong consistency.** Strong consistency is expensive. Most things in your system don't actually need it.
+
+---
+
+The CAP theorem isn't about choosing a technology. It's about understanding the tradeoffs in your system and making conscious decisions about consistency for each piece of data.
+
+Your user profiles can be eventually consistent. Your payment processing needs strong consistency. And that's perfectly fine. Different data, different requirements.
+
+Questions? Drop them in the comments!
+
+Until next time!

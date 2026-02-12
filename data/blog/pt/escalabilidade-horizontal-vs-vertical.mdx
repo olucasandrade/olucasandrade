@@ -1,0 +1,390 @@
+---
+title: 'Escalabilidade Horizontal vs. Vertical'
+date: '2025-01-30'
+language: pt
+tags: ['system-design', 'scalability', 'architecture', 'infrastructure']
+authors: ['lucas-andrade']
+draft: true
+summary: 'Seu sistema tá lento e precisa escalar. Você compra uma máquina maior ou adiciona mais máquinas? Essa decisão parece simples mas tem consequências enormes na arquitetura, no custo e na complexidade do seu sistema.'
+images: ['/static/images/system_design.webp']
+---
+
+Teu sistema tá ficando lento. A CPU tá em 90%, o banco tá demorando pra responder, os usuários tão reclamando. Hora de escalar.
+
+Mas escalar como? Você tem basicamente dois caminhos: comprar uma máquina mais potente (vertical) ou adicionar mais máquinas (horizontal). Parece simples, né? Mas essa decisão molda toda a arquitetura do seu sistema.
+
+Bora entender as diferenças, trade-offs e quando usar cada abordagem.
+
+## Escalabilidade Vertical (Scale Up)
+
+Escalar verticalmente é pegar sua máquina e deixar ela mais gorda: mais CPU, mais RAM, mais disco, mais tudo.
+
+```
+Antes:                    Depois:
+┌─────────────┐          ┌─────────────────┐
+│  Servidor   │          │    Servidor      │
+│  4 CPU      │    →     │    32 CPU        │
+│  16GB RAM   │          │    256GB RAM     │
+│  500GB SSD  │          │    2TB NVMe      │
+└─────────────┘          └─────────────────┘
+```
+
+### Prós
+
+- **Simples:** Sem mudança de código. Desliga, melhora o hardware, liga de novo.
+- **Sem complexidade distribuída:** Sem problemas de rede entre nós, sem sincronização de dados.
+- **Consistência fácil:** Tudo num lugar só, sem replicação.
+- **Latência baixa:** Comunicação intra-processo é mais rápida que rede.
+
+### Contras
+
+- **Limite físico:** Existe a maior máquina do mundo, e ela tem um teto. A maior instância EC2 hoje tem 448 vCPUs e 24TB de RAM. Parece muito, mas tem sistemas que precisam de mais.
+- **Ponto único de falha:** Se essa máquina morre, tudo morre.
+- **Custo exponencial:** Dobrar os recursos não custa 2x, custa 3x ou mais.
+- **Downtime pra upgrade:** Geralmente precisa parar pra trocar hardware.
+
+```
+Custo vs Capacidade (escala vertical):
+
+Custo ($)
+│           ╱
+│         ╱
+│       ╱
+│     ╱
+│   ╱
+│ ╱
+└──────────────── Capacidade
+  O custo sobe mais rápido que a capacidade.
+  Dobrar a RAM de 16 pra 32GB é barato.
+  Dobrar de 512 pra 1024GB... não é.
+```
+
+## Escalabilidade Horizontal (Scale Out)
+
+Escalar horizontalmente é adicionar mais máquinas ao invés de melhorar uma só.
+
+```
+Antes:                    Depois:
+┌──────────┐             ┌──────────┐ ┌──────────┐ ┌──────────┐
+│ Servidor │             │ Servidor │ │ Servidor │ │ Servidor │
+│ 4 CPU    │      →      │ 4 CPU    │ │ 4 CPU    │ │ 4 CPU    │
+│ 16GB RAM │             │ 16GB RAM │ │ 16GB RAM │ │ 16GB RAM │
+└──────────┘             └──────────┘ └──────────┘ └──────────┘
+                                    Load Balancer
+```
+
+### Prós
+
+- **Sem limite teórico:** Precisa de mais capacidade? Adiciona mais máquinas.
+- **Tolerância a falhas:** Uma máquina morre, as outras continuam.
+- **Custo linear:** 10 máquinas pequenas custam proporcionalmente menos que 1 máquina gigante.
+- **Sem downtime pra escalar:** Adiciona nós sem parar o sistema.
+
+### Contras
+
+- **Complexidade:** Distribuir trabalho entre máquinas é difícil.
+- **Consistência de dados:** Manter dados sincronizados entre nós é um pesadelo.
+- **Latência de rede:** Comunicação entre máquinas é mais lenta que intra-processo.
+- **Mais coisas pra gerenciar:** Monitoramento, deploy, rede, tudo multiplica.
+
+## Stateless vs Stateful: O Grande Divisor
+
+A facilidade de escalar horizontalmente depende muito de uma coisa: **o serviço tem estado?**
+
+### Serviços Stateless
+
+Não guardam estado entre requisições. Cada requisição é independente. Escalar horizontalmente é trivial.
+
+```python
+# Serviço stateless - qualquer instância pode atender qualquer requisição
+@app.get("/api/convert")
+def convert_currency(amount: float, from_cur: str, to_cur: str):
+    rate = get_exchange_rate(from_cur, to_cur)  # Busca de fonte externa
+    return {"result": amount * rate}
+
+# Escalar = adicionar mais instâncias atrás do load balancer
+# Qualquer instância pode processar qualquer requisição
+```
+
+```
+Requisição 1 → Instância A → Resposta
+Requisição 2 → Instância B → Resposta
+Requisição 3 → Instância C → Resposta
+
+Nenhuma instância precisa saber sobre as outras.
+```
+
+### Serviços Stateful
+
+Guardam estado. Escalar horizontalmente é complicado porque as instâncias precisam compartilhar ou particionar esse estado.
+
+```python
+# Serviço stateful - sessão do usuário na memória
+user_sessions = {}
+
+@app.post("/api/login")
+def login(user: str, password: str):
+    token = create_token(user)
+    user_sessions[token] = {"user": user, "cart": []}
+    return {"token": token}
+
+@app.post("/api/cart/add")
+def add_to_cart(token: str, item: str):
+    session = user_sessions[token]  # Só existe NESTA instância!
+    session["cart"].append(item)
+    return {"cart": session["cart"]}
+
+# Se a próxima requisição cai em outra instância, a sessão não existe lá.
+```
+
+### Como Tornar Stateful em "Stateless"
+
+A solução é **externalizar o estado**:
+
+```python
+# Mova o estado pra fora do serviço (Redis, banco, etc.)
+import redis
+
+r = redis.Redis()
+
+@app.post("/api/login")
+def login(user: str, password: str):
+    token = create_token(user)
+    r.hset(f"session:{token}", mapping={"user": user})
+    r.expire(f"session:{token}", 3600)
+    return {"token": token}
+
+@app.post("/api/cart/add")
+def add_to_cart(token: str, item: str):
+    r.rpush(f"cart:{token}", item)
+    cart = r.lrange(f"cart:{token}", 0, -1)
+    return {"cart": cart}
+
+# Agora qualquer instância pode atender qualquer requisição!
+# O estado tá no Redis, não no processo.
+```
+
+## Desafios de Escalar o Banco de Dados
+
+Escalar a aplicação horizontalmente é relativamente fácil. O banco de dados? Nem tanto.
+
+### Read Replicas
+
+O jeito mais simples de escalar leituras:
+
+```
+                    ┌──────────────┐
+  Escritas ────────→│   Primário   │
+                    │   (Leader)   │
+                    └──────┬───────┘
+                           │ Replicação
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+        ┌──────────┐ ┌──────────┐ ┌──────────┐
+        │ Réplica 1│ │ Réplica 2│ │ Réplica 3│
+        └──────────┘ └──────────┘ └──────────┘
+              ▲            ▲            ▲
+              └────────────┼────────────┘
+                     Leituras
+```
+
+```python
+# Direciona leituras pra réplicas, escritas pro primário
+class DatabaseRouter:
+    def __init__(self, primary, replicas):
+        self.primary = primary
+        self.replicas = replicas
+        self.replica_index = 0
+
+    def write(self, query, params):
+        return self.primary.execute(query, params)
+
+    def read(self, query, params):
+        replica = self.replicas[self.replica_index % len(self.replicas)]
+        self.replica_index += 1
+        return replica.execute(query, params)
+```
+
+### Sharding
+
+Quando nem as leituras seguram, hora de particionar os dados:
+
+```
+Sharding por user_id:
+
+user_id 1-1000    → Shard A
+user_id 1001-2000 → Shard B
+user_id 2001-3000 → Shard C
+
+Cada shard é um banco independente.
+Queries que envolvem um único usuário são rápidas.
+Queries cross-shard são dolorosas.
+```
+
+## Auto-Scaling
+
+A beleza da escala horizontal é que pode ser **automática**:
+
+```yaml
+# Kubernetes Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-service-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-service
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70    # Escala quando CPU > 70%
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+```
+
+```
+Auto-scaling em ação:
+
+08:00 - 3 pods, CPU 30% (madrugada tranquila)
+09:00 - 3 pods, CPU 50% (pessoal chegando)
+10:00 - 5 pods, CPU 70% → escala! → CPU volta pra 50%
+12:00 - 8 pods, CPU 75% → escala! → CPU volta pra 55%
+14:00 - 6 pods, CPU 40% (almoço acabou)
+18:00 - 4 pods, CPU 35% (fim do expediente)
+22:00 - 3 pods, CPU 20% (volta ao mínimo)
+```
+
+### AWS Auto Scaling
+
+```python
+# Configuração de Auto Scaling Group na AWS
+import boto3
+
+autoscaling = boto3.client('autoscaling')
+
+autoscaling.create_auto_scaling_group(
+    AutoScalingGroupName='payment-asg',
+    LaunchTemplate={
+        'LaunchTemplateName': 'payment-template',
+        'Version': '$Latest'
+    },
+    MinSize=2,
+    MaxSize=20,
+    DesiredCapacity=3,
+    TargetGroupARNs=['arn:aws:elasticloadbalancing:...'],
+    HealthCheckType='ELB',
+    HealthCheckGracePeriod=300
+)
+
+# Policy baseada em CPU
+autoscaling.put_scaling_policy(
+    AutoScalingGroupName='payment-asg',
+    PolicyName='scale-on-cpu',
+    PolicyType='TargetTrackingScaling',
+    TargetTrackingConfiguration={
+        'PredefinedMetricSpecification': {
+            'PredefinedMetricType': 'ASGAverageCPUUtilization'
+        },
+        'TargetValue': 70.0
+    }
+)
+```
+
+## Trade-offs de Custo
+
+```
+Cenário: Preciso processar 10.000 requisições/segundo
+
+Opção A - Vertical:
+  1x r6g.16xlarge (64 vCPUs, 512GB RAM)
+  Custo: ~$3.80/hora = ~$2,774/mês
+
+Opção B - Horizontal:
+  16x r6g.xlarge (4 vCPUs, 32GB RAM)
+  Custo: 16 × $0.25/hora = ~$2,920/mês
+
+Custo similar, MAS:
+  Opção A: Ponto único de falha, sem auto-scaling
+  Opção B: Tolerante a falhas, pode escalar de 8 a 24 conforme demanda
+
+Na prática, Opção B permite escalar pra baixo fora de pico:
+  - Pico (8h): 16 instâncias = $4.00/hora
+  - Fora de pico (20h): 4 instâncias = $1.00/hora
+  - Custo real: ~$1,360/mês (metade!)
+```
+
+## Quando Usar Cada Uma
+
+```
+Escolha VERTICAL quando:
+  ✓ Aplicação é inerentemente single-threaded
+  ✓ Banco relacional que não pode ser shardado facilmente
+  ✓ Protótipo/MVP que precisa ir pro ar rápido
+  ✓ Workload de memória intensiva (in-memory database)
+  ✓ A equipe é pequena e não tem expertise em distribuição
+
+Escolha HORIZONTAL quando:
+  ✓ Precisa de alta disponibilidade
+  ✓ Carga varia muito ao longo do dia/semana
+  ✓ Aplicação é stateless ou pode ser refatorada pra ser
+  ✓ Precisa de escalabilidade "infinita"
+  ✓ Custo importa e auto-scaling faz diferença
+
+Na prática, a maioria dos sistemas usa AMBOS:
+  - Escala vertical até ficar caro demais
+  - Depois escala horizontal
+```
+
+## Exemplo Real: Evolução de uma Startup
+
+```
+Fase 1 - MVP (100 usuários):
+  1 servidor (vertical)
+  Aplicação + Banco na mesma máquina
+  Custo: $20/mês
+
+Fase 2 - Crescimento (10.000 usuários):
+  1 servidor maior (vertical)
+  Banco separado (RDS)
+  Custo: $200/mês
+
+Fase 3 - Escala (100.000 usuários):
+  3 servidores de aplicação (horizontal) + Load Balancer
+  Banco com read replicas
+  Redis pra cache e sessões
+  Custo: $800/mês
+
+Fase 4 - Escala séria (1.000.000 usuários):
+  Auto-scaling group (5-20 instâncias)
+  Banco shardado
+  CDN pra assets estáticos
+  Microserviços pros componentes mais pesados
+  Custo: $5.000/mês
+
+Fase 5 - Escala absurda (10.000.000+ usuários):
+  Multi-região
+  Múltiplos clusters Kubernetes
+  Databases especializados por use case
+  Custo: depende, mas provavelmente tem um time de FinOps já
+```
+
+---
+
+A regra de ouro é: **comece vertical, vá horizontal quando precisar.** Escalar verticalmente é mais simples e mais barato no começo. Quando você bater no teto (seja de capacidade ou de custo), aí sim pensa em distribuir.
+
+E lembra: escalar horizontalmente não é só "adicionar mais máquinas." É repensar como seu sistema lida com estado, com dados e com falhas. Dá mais trabalho, mas é o que permite chegar em escala de verdade.
+
+Dúvidas? Manda nos comentários!
+
+Até a próxima!
