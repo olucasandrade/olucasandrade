@@ -27,7 +27,8 @@ export default function Footer() {
   return (
     <>
       <footer>
-        <div className="mt-16 flex flex-col items-center">
+        <div className="mx-auto mb-8 mt-16 h-px w-full max-w-md bg-gradient-to-r from-transparent via-gray-300 to-transparent dark:via-gray-600" />
+        <div className="flex flex-col items-center">
           <div className="mb-3 flex space-x-4">
             <div className="flex items-center">
               {siteMetadata.formspree === false ? (

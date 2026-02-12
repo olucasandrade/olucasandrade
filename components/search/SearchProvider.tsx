@@ -117,6 +117,30 @@ export const SearchProvider = ({ children }: SearchProviderProps) => {
               </i>
             ),
           },
+          {
+            id: 'experience',
+            name: locale === fallbackLng ? 'Experience' : 'Experiência',
+            keywords: 'work career jobs timeline',
+            section: navigationSection,
+            perform: () => router.push(`/${locale}/experience`),
+            icon: (
+              <i>
+                <AboutIcon />
+              </i>
+            ),
+          },
+          {
+            id: 'terminal',
+            name: 'Terminal',
+            keywords: 'cli command line games',
+            section: navigationSection,
+            perform: () => router.push(`/${locale}/terminal`),
+            icon: (
+              <i>
+                <BlogIcon />
+              </i>
+            ),
+          },
           ...authorsActions,
         ],
         onSearchDocumentsLoad(json) {

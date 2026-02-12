@@ -26,13 +26,14 @@ const Card: React.FC<CardProps> = ({ title, description, imgSrc, href }) => {
       variants={variants}
       initial="hidden"
       animate="enter"
+      whileHover={{ y: -4 }}
       transition={{ type: 'linear' }}
       className="md max-w-[544px] p-4 md:w-1/2"
     >
       <div
         className={`${
           imgSrc && 'h-full'
-        } overflow-hidden rounded-md border-2 border-gray-200 border-opacity-60 dark:border-gray-700`}
+        } overflow-hidden rounded-xl border-2 border-gray-200/60 bg-white/80 backdrop-blur-sm transition-shadow duration-300 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80`}
       >
         {imgSrc &&
           (href ? (

@@ -24,7 +24,11 @@ const Header = () => {
       <div className="flex items-center justify-between py-10">
         <div>
           <Link href={`/${locale}/`} aria-label={siteMetadata.headerTitle}>
-            <div className="flex items-center justify-between">
+            <motion.div
+              className="flex items-center justify-between"
+              whileHover={{ scale: 1.03 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+            >
               {typeof siteMetadata.headerTitle === 'string' ? (
                 <div className="hidden h-6 text-2xl font-semibold sm:block">
                   {siteMetadata.headerTitle}
@@ -32,7 +36,7 @@ const Header = () => {
               ) : (
                 siteMetadata.headerTitle
               )}
-            </div>
+            </motion.div>
           </Link>
         </div>
         <div className="flex items-center space-x-4 leading-5 sm:space-x-6">
