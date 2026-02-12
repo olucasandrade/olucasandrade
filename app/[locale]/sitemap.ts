@@ -23,7 +23,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
         alternatepostsUrls.push({ url: alternatepostsUrl, lang: secondLng })
       }
 
-      return [{ url: mainUrl, lastModified: post.lastmod || post.date }, ...alternatepostsUrls]
+      return [
+        {
+          url: mainUrl,
+          lastModified: post.lastmod || post.date,
+          changeFrequency: 'monthly' as const,
+          priority: 0.7,
+        },
+        ...alternatepostsUrls,
+      ]
     })
 
   const authorsRoutes = allAuthors.flatMap((author) => {
@@ -40,10 +48,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       alternateauthorsUrls.push({ url: alternateauthorsUrl, lang: secondLng })
     }
 
-    return [{ url: mainUrl }, ...alternateauthorsUrls]
+    return [
+      { url: mainUrl, changeFrequency: 'monthly' as const, priority: 0.6 },
+      ...alternateauthorsUrls,
+    ]
   })
 
-  const routes = ['', 'blog', 'projects', 'tags'].flatMap((route) => {
+  const routes = ['', 'blog', 'projects', 'tags', 'experience', 'terminal'].flatMap((route) => {
     const mainUrl = `${siteUrl}/${fallbackLng}/${route}`.replace(/\/$/, '')
     const alternateUrls: { url: string; lang: string }[] = []
 
@@ -57,7 +68,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
       alternateUrls.push({ url: alternateUrl, lang: secondLng })
     }
 
-    return [{ url: mainUrl, lastModified: today }, ...alternateUrls]
+    const priority = route === '' ? 1.0 : route === 'blog' ? 0.9 : 0.8
+
+    return [
+      { url: mainUrl, lastModified: today, changeFrequency: 'weekly' as const, priority },
+      ...alternateUrls,
+    ]
   })
 
   const combinedRoutes = [...routes, ...blogRoutes, ...authorsRoutes]

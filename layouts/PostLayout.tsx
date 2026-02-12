@@ -15,6 +15,7 @@ import Share from '@/components/share'
 import { Toc } from 'pliny/mdx-plugins'
 import Sidetoc from '@/components/sidetoc'
 import BlogStats from '@/components/blog/BlogStats'
+import JsonLd from '@/components/seo/JsonLd'
 
 const editUrl = (path) => `${siteMetadata.siteRepo}/blob/main/data/${path}`
 const discussUrl = (path) =>
@@ -44,12 +45,27 @@ export default async function PostLayout({
   children,
   params: { locale },
 }: LayoutProps) {
-  const { filePath, path, slug, date, title, tags, language, series, toc } = content
+  const { filePath, path, slug, date, title, tags, language, series, toc, summary, images } =
+    content
   const basePath = path.split('/')[0]
   const { t } = await createTranslation(locale, 'home')
   const tableOfContents: Toc = toc as unknown as Toc
   return (
     <>
+      <JsonLd
+        type="blogPosting"
+        locale={locale}
+        data={{
+          title,
+          datePublished: date,
+          dateModified: date,
+          description: summary,
+          image: images?.[0]
+            ? `${siteMetadata.siteUrl}${images[0]}`
+            : `${siteMetadata.siteUrl}${siteMetadata.socialBanner}`,
+          url: `${siteMetadata.siteUrl}/${locale}/blog/${slug}`,
+        }}
+      />
       <ScrollTopAndComment />
       <Sidetoc toc={tableOfContents} />
       <article>
