@@ -1,9 +1,13 @@
+'use client'
+
 import React from 'react'
 import Link from '@/components/mdxcomponents/Link'
 import Tag from '@/components/tag'
 import { formatDate } from 'pliny/utils/formatDate'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import Image from 'next/image'
+import { motion } from 'framer-motion'
+import { useTranslation } from 'app/[locale]/i18n/client'
 
 interface Post {
   slug: string
@@ -18,13 +22,19 @@ interface Post {
 interface PostListProps {
   posts: Post[]
   locale: LocaleTypes
-  t: (key: string) => string
   maxDisplay: number
 }
 
-const PostList: React.FC<PostListProps> = ({ posts, locale, t, maxDisplay }) => {
+const cardVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0 },
+}
+
+const PostList: React.FC<PostListProps> = ({ posts, locale, maxDisplay }) => {
+  const { t } = useTranslation(locale, 'home')
+
   return (
-    <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+    <ul className="divide-y divide-gray-200/50 dark:divide-gray-700/50">
       {!posts.length && <li>{t('noposts')}</li>}
       {posts.slice(0, maxDisplay).map((post, index) => {
         const { slug, date, title, summary, tags } = post
@@ -37,8 +47,16 @@ const PostList: React.FC<PostListProps> = ({ posts, locale, t, maxDisplay }) => 
         ]
         const imageIndex = index % decorativeImages.length
         return (
-          <li key={slug} className="py-12">
-            <article>
+          <motion.li
+            key={slug}
+            variants={cardVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: '-60px' }}
+            transition={{ duration: 0.3, delay: index * 0.06, ease: [0.25, 0.1, 0.25, 1] }}
+            className="py-6"
+          >
+            <article className="rounded-xl border border-gray-200/60 bg-white/80 p-6 backdrop-blur-sm transition-all duration-300 hover:border-primary-500/30 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80 dark:hover:border-primary-500/30">
               <div className="space-y-2 xl:grid xl:grid-cols-4 xl:items-baseline xl:space-y-0">
                 <dl>
                   <dt className="sr-only">{t('pub')}</dt>
@@ -91,7 +109,7 @@ const PostList: React.FC<PostListProps> = ({ posts, locale, t, maxDisplay }) => 
                 </div>
               </div>
             </article>
-          </li>
+          </motion.li>
         )
       })}
     </ul>
