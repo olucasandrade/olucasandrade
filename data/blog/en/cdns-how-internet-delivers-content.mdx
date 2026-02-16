@@ -1,6 +1,6 @@
 ---
 title: 'CDNs: How the Internet Delivers Content in Milliseconds'
-date: '2025-01-19'
+date: '2025-02-16'
 language: en
 tags: ['system-design', 'cdn', 'performance', 'infrastructure']
 authors: ['lucas-andrade']
@@ -11,7 +11,7 @@ images: ['/static/images/cdn.png']
 
 Ever wondered how you can watch a video on YouTube that's hosted in the US when you're sitting in Brazil, and it still loads instantly? Or how a website with millions of users worldwide manages to feel fast for everyone?
 
-The answer is CDN - Content Delivery Network.
+The answer is CDN (Content Delivery Network).
 
 ## The Problem: Distance Matters
 
@@ -48,7 +48,7 @@ User (Brazil) ────> Edge (São Paulo) ────> Origin (USA)
 
 The CDN caches your content at edge locations. When a user requests something, the edge server either:
 1. **Cache hit:** Returns the content immediately (fast!)
-2. **Cache miss:** Fetches from origin, caches it, then returns (slow first time, fast after)
+2. **Cache miss:** Fetches from origin, caches it, then returns (slow first time, fast after). Same logic as a Redis memcache.
 
 ## What Should You Put on a CDN?
 
@@ -167,62 +167,6 @@ This is crucial for protecting your origin during traffic spikes.
 - Azure CDN
 - Google Cloud CDN
 - Bunny CDN (budget-friendly)
-
-## CDN for APIs?
-
-Yes, you can use CDNs for APIs! But you need to be careful.
-
-```python
-# Good: Cacheable API response
-@app.route('/api/products')
-def get_products():
-    products = fetch_products()  # Same for all users
-    response = jsonify(products)
-    response.headers['Cache-Control'] = 'public, max-age=300'  # 5 min
-    return response
-
-# Bad: User-specific, can't cache
-@app.route('/api/user/profile')
-def get_profile():
-    user = get_current_user()  # Different for each user
-    return jsonify(user.profile)
-    # Don't cache this on CDN!
-```
-
-For APIs, consider:
-- **Vary header:** Cache different versions based on headers
-- **Short TTL:** 1-5 minutes for frequently changing data
-- **Stale-while-revalidate:** Serve stale content while fetching fresh
-
-## Edge Computing
-
-Modern CDNs can run code at the edge, not just cache content. This is a game changer.
-
-```javascript
-// Cloudflare Worker example
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request))
-})
-
-async function handleRequest(request) {
-  // Run this code at the edge, close to the user
-  const country = request.cf.country
-
-  if (country === 'BR') {
-    return Response.redirect('https://br.example.com')
-  }
-
-  // Fetch from origin
-  return fetch(request)
-}
-```
-
-Use cases for edge computing:
-- A/B testing
-- Geolocation redirects
-- Authentication checks
-- Request/response transformation
-- Bot detection
 
 ## CDN Gotchas
 
