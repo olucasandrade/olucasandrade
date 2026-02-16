@@ -122,7 +122,6 @@ export default function HeroSection() {
           )}
           <SocialIcon kind="github" href={siteMetadata.github} size={5} />
           <SocialIcon kind="linkedin" href={siteMetadata.linkedin} size={5} />
-          <SocialIcon kind="twitter" href={siteMetadata.twitter} size={5} />
         </motion.div>
       </div>
     </motion.section>
