@@ -4,7 +4,7 @@ date: '2025-01-27'
 language: en
 tags: ['system-design', 'chaos-engineering', 'resilience', 'fault-tolerance']
 authors: ['lucas-andrade']
-draft: true
+draft: false
 summary: 'What if the best way to make your system reliable is to intentionally break it? Chaos engineering is exactly that: controlled destruction that reveals weaknesses before real failures do.'
 images: ['/static/images/chaos-engineering.png']
 ---
@@ -19,17 +19,9 @@ Chaos engineering is the discipline of experimenting on a system to build confid
 
 Think about it. How do you know your system handles a database going down? You could read the code and say "yeah, we have fallbacks." But have you actually tested it? In production? Under real load?
 
-Most teams haven't. And that's exactly when things blow up -- at 3 AM on a Friday, when half the team is on vacation.
+Most teams haven't. And that's exactly when things blow up, at 3 AM on a Friday, when half the team is on vacation.
 
 Here's the thing: **your system WILL fail**. Servers crash, networks partition, disks fill up, dependencies go down. The question isn't "if" but "when." Chaos engineering shifts the discovery of these failures from 3 AM incidents to controlled experiments during business hours.
-
-```
-Traditional approach:
-  Build → Deploy → Hope for the best → Incident at 3 AM → Panic
-
-Chaos engineering approach:
-  Build → Deploy → Break it on purpose → Fix weaknesses → Sleep well
-```
 
 ## Netflix and the Chaos Monkey
 
@@ -58,6 +50,22 @@ Netflix later expanded this into a whole suite called the **Simian Army**:
 - **Chaos Kong:** Simulates the failure of an entire AWS region
 
 And here's the crazy part: they run these in production. Because that's the only environment that truly matters.
+
+## Real-World Lessons
+
+### The S3 Outage (2017)
+
+In February 2017, a typo in an AWS S3 command took down a huge chunk of the internet. Sites that depended on S3 (including some that you'd think would be more resilient) went down.
+
+The lesson? If you haven't tested what happens when S3 is unavailable, you don't actually know if your system can handle it. Companies that had practiced this scenario recovered in minutes. Others were down for hours.
+
+### The Stripe Chaos Engineering Culture
+
+Stripe regularly runs what they call "failure Fridays." They simulate failures in production every week and have their engineers practice responding. This culture of regular practice means when real incidents happen, their response is almost muscle memory.
+
+### Google's DiRT (Disaster Recovery Testing)
+
+Google runs annual DiRT exercises that simulate large-scale disasters. They've intentionally cut power to data centers, simulated earthquake damage, and tested what happens when key personnel are unavailable. The result? When real disasters happen, Google's recovery is remarkably smooth.
 
 ## The Principles of Chaos Engineering
 
@@ -119,22 +127,6 @@ Level 6: Entire region (you better know what you're doing)
 ```
 
 Think of it like controlled demolition. You don't start by bringing down the whole building. You start with one wall, see what happens, learn, and then expand.
-
-### Abort Conditions
-
-Always define these BEFORE the experiment:
-
-```yaml
-experiment: kill-payment-service-instance
-blast_radius: 1 instance out of 10
-duration: 30 minutes
-abort_conditions:
-  - error_rate > 1%
-  - p99_latency > 500ms
-  - customer_complaints > 0
-  - revenue_impact > $100
-rollback_plan: restart instance from AMI
-```
 
 ## Game Days: Chaos as a Team Sport
 
@@ -481,22 +473,6 @@ Chaos Toolkit   | Open source | Declarative, multi-platform
 Toxiproxy       | Open source | Network-level failures
 ChaosBlade      | Open source | Rich fault injection
 ```
-
-## Real-World Lessons
-
-### The S3 Outage (2017)
-
-In February 2017, a typo in an AWS S3 command took down a huge chunk of the internet. Sites that depended on S3 (including some that you'd think would be more resilient) went down.
-
-The lesson? If you haven't tested what happens when S3 is unavailable, you don't actually know if your system can handle it. Companies that had practiced this scenario recovered in minutes. Others were down for hours.
-
-### The Stripe Chaos Engineering Culture
-
-Stripe regularly runs what they call "failure Fridays." They simulate failures in production every week and have their engineers practice responding. This culture of regular practice means when real incidents happen, their response is almost muscle memory.
-
-### Google's DiRT (Disaster Recovery Testing)
-
-Google runs annual DiRT exercises that simulate large-scale disasters. They've intentionally cut power to data centers, simulated earthquake damage, and tested what happens when key personnel are unavailable. The result? When real disasters happen, Google's recovery is remarkably smooth.
 
 ## Getting Started: A Realistic Roadmap
 

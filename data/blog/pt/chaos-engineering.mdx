@@ -1,10 +1,10 @@
 ---
-title: 'Chaos Engineering: Quebrando Coisas de Propósito'
+title: 'Chaos Engineering: Quebrando sua aplicação... de Propósito'
 date: '2025-01-27'
 language: pt
 tags: ['system-design', 'chaos-engineering', 'resilience', 'fault-tolerance']
 authors: ['lucas-andrade']
-draft: true
+draft: false
 summary: 'E se eu te dissesse que a melhor forma de garantir que seu sistema aguenta pressão é quebrando ele de propósito? Chaos engineering é a arte de causar falhas controladas pra descobrir fraquezas antes que seus usuários descubram.'
 images: ['/static/images/system_design.webp']
 ---
@@ -13,58 +13,60 @@ Imagina a seguinte cena: sexta-feira, 17h, todo mundo já tá quase saindo e de 
 
 Agora imagina um cenário diferente: sua equipe **provoca** falhas controladas durante o horário comercial, com todo mundo de olho, pronto pra agir. Descobre que o sistema não lida bem com a queda de um nó do banco e corrige antes de virar problema de verdade.
 
-Isso é chaos engineering. E sim, é tão divertido quanto parece.
+Eu sei que parece contraintuitivo. A gente fica o tempo todo pensando em como não quebrar nada, e de repente, eu te falo pra quebrar algo de propósito? Sair puxando os cabos? Meio que isso. Mas com método.
+
+Isso se chama chaos engineering. E é mais divertido do que parece.
 
 ## Por que Quebrar Coisas de Propósito?
 
 A lógica é simples: **falhas vão acontecer**. Servidores vão cair, redes vão falhar, discos vão encher. A pergunta não é "se", é "quando".
 
-Então por que esperar a falha te pegar de surpresa? É melhor provocar ela num ambiente controlado, entender o comportamento do sistema e corrigir as fraquezas.
+Então por que esperar a falha te pegar de surpresa? Pode ser melhor provocar ela num ambiente controlado, entender o comportamento do sistema e corrigir as fraquezas.
 
-```
-Abordagem tradicional:
-  Falha acontece → Pânico → Debug às 3h da manhã → Patch desesperado → "Nunca mais"
+## O Paradoxo da Resiliência
 
-Chaos engineering:
-  Provoca falha controlada → Observa comportamento → Identifica fraqueza → Corrige → Sistema fica mais forte
-```
+Existe um paradoxo interessante: **quanto mais você quebra seu sistema, mais forte ele fica**. Cada falha injetada revela uma fraqueza. Cada fraqueza corrigida torna o sistema mais robusto. Com o tempo, seu sistema se torna tão resiliente que as falhas injetadas não causam mais impacto. Até que restem poucos, quase nenhum ponto de falha.
 
-É tipo vacina pro seu sistema. Você injeta uma dose pequena do problema pra construir imunidade.
+É o conceito do Nassim Taleb de sistemas **antifrágeis**: sistemas que ficam mais fortes com o estresse, ao invés de simplesmente resistirem a ele.
 
 ## A Netflix e o Chaos Monkey
 
-A empresa que popularizou chaos engineering foi a Netflix. Em 2011, eles criaram o **Chaos Monkey**, uma ferramenta que aleatoriamente desliga instâncias de produção durante o horário comercial.
+Não podemos falar de chaos engineering sem falar da Netflix. 
+
+Eles migraram para a AWS em 2010 e rapidamente perceberam que cloud não é tão confiável quanto parece. Servidores podem morrer a qualquer momento. E ao invés de lutarem contra isso, eles abraçaram isso.
+
+Em 2011, eles criaram o **Chaos Monkey**, uma ferramenta que aleatoriamente desliga instâncias de produção durante o horário comercial.
 
 Sim, em **produção**. Durante o horário de trabalho.
 
 A ideia era genial: se seus engenheiros sabem que instâncias podem cair a qualquer momento, eles vão construir sistemas que lidam com isso naturalmente. Você não projeta pra falha se nunca experimenta falha.
 
-```
-Chaos Monkey: "Vou derrubar essa instância do serviço de recomendação."
-
-Serviço bem projetado:
-  → Load balancer redireciona tráfego
-  → Outras instâncias absorvem a carga
-  → Usuário nem percebe
-  → ✓ Teste passou
-
-Serviço mal projetado:
-  → Requisições começam a falhar
-  → Timeout em cascata
-  → Usuários recebem erro
-  → ✗ Hora de corrigir
-```
-
-A Netflix depois expandiu pra uma suíte inteira chamada **Simian Army**:
+A Netflix depois expandiu pra uma suíte inteira chamada **Simian Army** (isso é assustador):
 
 - **Chaos Monkey:** Desliga instâncias aleatórias
 - **Latency Monkey:** Injeta atraso nas chamadas de rede
 - **Chaos Gorilla:** Derruba uma zona de disponibilidade inteira
 - **Chaos Kong:** Simula falha de uma região inteira da AWS
 
+## Outros casos do mundo real
+
+### The S3 Outage (2017)
+
+Em 2017, um typo num comando do S3 derrubou uma boa parte da internet que o usava. Inclusive sites que são conhecidos por serem resilientes.
+
+A lição? Se você nunca testou o que acontece quando o S3 está indisponível, você não sabe se seu sistema ficaria de pé nesse cenário. Empresas que praticaram esse cenário tiveram uma recuperação rápida, enquanto outras sofreram por horas.
+
+### The Stripe Chaos Engineering Culture
+
+Na Stripe, eles rodam algo chamado "failure Fridays", que consiste numa simulação de falhas em produção toda semana, com os SWEs de olho. Isso cria uma memória muscular de resposta a incidente, porque a prática é recorrente, mesmo sem incidentes,
+
+### Google's DiRT (Disaster Recovery Testing)
+
+A Google roda todo ano um exercício de Disaster Recovery, cortando capacidade dos data centers, simulando danos por terremotos, e testando todo tipo de falha. O resultado? Google é uma das empresas mais estáveis do planeta no que tange seus produtos.
+
 ## Princípios de Chaos Engineering
 
-O pessoal da Netflix formalizou os princípios num documento chamado "Principles of Chaos Engineering". Vou resumir:
+O pessoal da Netflix formalizou os princípios num documento chamado "Principles of Chaos Engineering". Vou deixar o link aqui, mas resumir um pouco a explicação:
 
 ### 1. Defina o Estado Estável
 
@@ -96,22 +98,13 @@ e a latência p99 vai se manter abaixo de 500ms."
 
 ### 3. Varie Eventos do Mundo Real
 
-Simule coisas que realmente acontecem:
-
-```
-Falhas realistas:
-  ✓ Instância morre (acontece o tempo todo)
-  ✓ Latência de rede aumenta (congestionamento)
-  ✓ Disco enche (logs crescem)
-  ✓ DNS falha (mais comum do que parece)
-  ✓ Certificado expira (clássico)
-  ✓ Banco fica lento (query pesada)
-
-Falhas improváveis (mas não impossíveis):
-  ✓ Região inteira da cloud cai
-  ✓ Corrupção de dados em replicação
-  ✓ Clock skew entre servidores
-```
+Simule coisas que realmente acontecem, falhas realistas:
+  - Instância morre (acontece o tempo todo)
+  - Latência de rede aumenta (congestionamento)
+  - Disco enche (logs crescem)
+  - DNS falha (mais comum do que parece)
+  - Certificado expira (clássico)
+  - Banco fica lento (query pesada)
 
 ### 4. Execute em Produção
 
@@ -121,26 +114,21 @@ Claro, com cuidado. Comece pequeno.
 
 ### 5. Minimize o Blast Radius
 
-Esse é o ponto mais importante. **Blast radius** é o impacto potencial do seu experimento.
+Esse é o ponto mais importante, o diferencial pro chaos engineering funcionar. **Blast radius** é o impacto potencial do seu experimento, em níveis:
 
-```
-Blast radius progressivo:
-
-Nível 1: Um pod em um deployment (impacto mínimo)
-Nível 2: Um nó inteiro do cluster
-Nível 3: Um serviço inteiro
-Nível 4: Uma zona de disponibilidade
-Nível 5: Uma região inteira
+- Nível 1: Um pod em um deployment (impacto mínimo)
+- Nível 2: Um nó inteiro do cluster
+- Nível 3: Um serviço inteiro
+- Nível 4: Uma zona de disponibilidade
+- Nível 5: Uma região inteira
 
 Comece pelo nível 1. Só suba quando tiver confiança.
-```
 
 ## Game Days
 
 Game days são exercícios planejados onde a equipe simula cenários de falha e pratica a resposta. É tipo um simulado de incêndio pro seu sistema.
 
-```
-Roteiro de um Game Day:
+O roteiro de um Game Day funciona como algo parecido com isso:
 
 1. PREPARAÇÃO (1 semana antes)
    - Escolhe o cenário de falha
@@ -160,7 +148,6 @@ Roteiro de um Game Day:
    - O que demorou demais?
    - O que faltou nos alertas?
    - O que precisa ser automatizado?
-```
 
 ### Exemplo de Cenário
 
@@ -324,74 +311,6 @@ Memória esgotada       │ OOM killer, graceful degradation
 DNS falha              │ Caching de DNS, fallbacks
 ```
 
-### Aplicação
-
-```python
-# Middleware de chaos pra testes (NÃO use em produção sem controle)
-import random
-
-class ChaosMiddleware:
-    def __init__(self, app, failure_rate=0.05):
-        self.app = app
-        self.failure_rate = failure_rate
-
-    def __call__(self, request):
-        # 5% das requisições vão falhar aleatoriamente
-        if random.random() < self.failure_rate:
-            raise Exception("Falha injetada pelo chaos middleware")
-
-        # 5% das requisições vão ter latência extra
-        if random.random() < self.failure_rate:
-            import time
-            time.sleep(random.uniform(1, 5))  # 1 a 5 segundos extra
-
-        return self.app(request)
-```
-
-## Como Começar (Sem Derrubar Tudo)
-
-Se você nunca fez chaos engineering, não comece derrubando produção. Segue um caminho progressivo:
-
-### Fase 1: Entenda Seu Sistema
-
-```
-Antes de quebrar qualquer coisa:
-  □ Mapeie dependências entre serviços
-  □ Identifique pontos únicos de falha
-  □ Garanta que tem monitoramento adequado
-  □ Documente o comportamento esperado de falha
-```
-
-### Fase 2: Comece em Staging
-
-```
-Primeiros experimentos em staging:
-  □ Mate um pod e veja se o Kubernetes recria
-  □ Simule latência na rede entre dois serviços
-  □ Encha o disco de um nó
-  □ Derrube o banco de dados e observe o fallback
-```
-
-### Fase 3: Evolua pra Produção
-
-```
-Quando estiver confiante:
-  □ Comece com blast radius mínimo (1 pod)
-  □ Tenha rollback automático
-  □ Execute durante horário comercial (com a equipe por perto)
-  □ Comunique pra toda a organização
-```
-
-### Fase 4: Automatize
-
-```
-Maturidade em chaos engineering:
-  □ Experimentos rodando automaticamente
-  □ Integrado no pipeline de CI/CD
-  □ Relatórios automáticos de resiliência
-  □ Game days regulares (mensal/trimestral)
-```
-
 ## Erros Comuns
 
 1. **Começar grande demais:** Derrubar uma região inteira no primeiro experimento. Comece com um pod.
@@ -406,26 +325,11 @@ Maturidade em chaos engineering:
 
 6. **Chaos engineering não é teste de carga:** São coisas diferentes. Teste de carga é sobre volume. Chaos é sobre resiliência.
 
-## O Paradoxo da Resiliência
-
-Existe um paradoxo interessante: **quanto mais você quebra seu sistema, mais forte ele fica**. Cada falha injetada revela uma fraqueza. Cada fraqueza corrigida torna o sistema mais robusto. Com o tempo, seu sistema se torna tão resiliente que as falhas injetadas não causam mais impacto.
-
-```
-Ciclo virtuoso:
-  Injeta falha → Descobre fraqueza → Corrige → Sistema mais forte
-       ↑                                              │
-       └──────────────────────────────────────────────┘
-```
-
-É o conceito do Nassim Taleb de sistemas **antifrágeis**: sistemas que ficam mais fortes com o estresse, ao invés de simplesmente resistirem a ele.
-
 ---
 
 Chaos engineering pode parecer contra-intuitivo no começo. Quem em sã consciência quer quebrar o próprio sistema? Mas a verdade é que sistemas que nunca são testados sob falha são sistemas que você não sabe se funcionam de verdade.
 
 Se você tá começando, dá uma olhada no Chaos Toolkit ou no Litmus pro Kubernetes. São gratuitos, open source e um ótimo ponto de partida.
-
-Quebrar coisas de propósito é uma das práticas mais divertidas de engenharia. Sério.
 
 Dúvidas? Manda nos comentários!
 
