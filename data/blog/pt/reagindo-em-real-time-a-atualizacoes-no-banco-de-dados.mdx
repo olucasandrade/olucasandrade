@@ -1,0 +1,235 @@
+---
+title: 'Reagindo em real-time à atualizações no banco de dados: Como foi o processo de criação de um CDC'
+date: '2026-04-22'
+language: pt
+tags: ['databases', 'postgres', 'cdc', 'golang', 'real-time', 'kaptanto']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Todo insert, update e delete no seu banco é um evento. A maioria dos sistemas ignora isso e recorre a polling. Passei meses construindo o Kaptanto — uma ferramenta de CDC em um único binário Go — e esse é o relato do que aprendi no caminho.'
+images: ['/static/images/kaptanto_logo.png']
+---
+
+Eu criei o [youjustneedpostgres.com](https://youjustneedpostgres.com) pra argumentar que a maioria dos times poderia usar Postgres pra quase tudo. Pra filas, pra busca, pra documentos. A recomendação era parar de pegar uma ferramenta nova cada vez que aparece um problema novo, porque o Postgres provavelmente já faz isso.
+
+E depois passei meses construindo uma ferramenta cujo único propósito é te fazer mergulhar ainda mais fundo no Postgres. É, e a ironia não me passa despercebida.
+
+Mas o negócio é o seguinte: polling é o assassino silencioso de arquiteturas backend. Seu serviço pergunta "mudou alguma coisa desde a última vez?" a cada 5 segundos, independente de ter acontecido alguma coisa. Ou atualiza alguma coisa após a transação de um update, fazendo o usuário esperar, de toda maneira. Existe um jeito melhor que já mora dentro do seu banco, e aí você só precisa de algo para se conectar a ele.
+
+Esse algo já existe em várias ferramentas, mas todas que eu usei ou são muito overpower/caras, ou não atenderam meu problema completamente. Foi por isso que criei o [Kaptanto](https://kaptan.to) (Aquele que captura, em Esperanto). E esse é o relato de como ele foi construído.
+
+## O Problema (e o que é um CDC?)
+
+Uma linha muda no banco. Como o resto do sistema fica sabendo?
+
+A resposta ingênua que todo mundo chega é polling. Funciona. Mas pensa no que você tá fazendo de verdade: querying um banco em intervalo fixo, parseando o resultado, comparando com o que você tinha antes, e aí finalmente fazendo a coisa que você precisava fazer. A maioria dessas queries volta vazia, e aí você paga um imposto constante pela chance de talvez ter um dado novo.
+
+As alternativas que as pessoas pulam são webhooks (agora sua aplicação precisa lembrar de dispará-los), filas de mensagem (adicionar Kafka pra sincronizar um cache Redis, claro), ou simplesmente aceitar o lag (o negócio decide se 5 segundos tá bom ou não).
+
+Change Data Capture é um conceito diferente. Em vez da sua aplicação anunciar "isso mudou", o banco te avisa: cada insert, update e delete, em ordem, no momento em que acontece, com os valores de antes e depois. E isso já vem embutido em vários bancos, só precisa do "wiring".
+
+## Como o Postgres Faz Isso
+
+O Postgres tem essa capacidade há anos com um nome que soa mais assustador do que é: **o Write-Ahead Log**.
+
+Toda e qualquer mudança no Postgres passa pelo WAL antes de qualquer outra coisa. A linha não é escrita até que a mudança esteja logada. É assim que o Postgres sobrevive a crashes, porque ele reproduz o WAL no restart. Mas o mesmo mecanismo que torna o Postgres confiável também o torna streamável.
+
+Com um conceito que a gente chama de **replicação lógica**, o Postgres decodifica as entradas binárias do WAL em eventos legíveis. Você recebe: nome da tabela, tipo de operação, a linha antes da mudança, a linha depois. E... só. Você se inscreve em um replication slot e o Postgres te manda um stream.
+
+A configuração é genuinamente mínima:
+
+```sql
+-- postgresql.conf
+-- wal_level = logical
+
+CREATE ROLE kaptanto WITH REPLICATION LOGIN PASSWORD 'secret';
+GRANT SELECT ON TABLE public.orders TO kaptanto;
+
+-- Sem isso, updates só te dão os valores novos, não os antigos
+ALTER TABLE public.orders REPLICA IDENTITY FULL;
+```
+
+Bom, essa é a teoria. A implementação é onde as coisas ficam interessantes, mas vou falar disso depois.
+
+## MongoDB: Uma API Mais Agradável pra Mesma Ideia
+
+Ah, o Kaptanto também suporta MongoDB, e honestamente o lado do MongoDB foi a experiência mais tranquila de construir.
+
+O MongoDB chama esse recurso de **Change Streams**. Onde o Postgres te dá bytes brutos do WAL e te faz decodificar um protocolo binário com um plugin de replicação (`pgoutput`), o MongoDB expõe uma API limpa baseada em cursor em cima do oplog. Você abre um change stream e ele te entrega documentos estruturados:
+
+```json
+{
+  "operationType": "update",
+  "ns": { "db": "shop", "coll": "orders" },
+  "documentKey": { "_id": "abc123" },
+  "updateDescription": {
+    "updatedFields": { "status": "shipped" },
+    "removedFields": []
+  }
+}
+```
+
+Outra coisa boa: **resume tokens**. O MongoDB te dá um token com cada evento. Se seu processo cair e reconectar com aquele token, o MongoDB retoma exatamente de onde parou, inclusive através de eleições de replica set. O driver cuida do failover automaticamente. Então aqui eu economizei muuuito esforço.
+
+E aí o tradeoff é controle. O WAL do Postgres te dá a linha completa antes e depois, limites de transação, posições LSN que você pode raciocinar com precisão. Os Change Streams do MongoDB são mais alto nível e às vezes escondem detalhes que você gostaria de ver. Para a maioria dos casos de uso, a API do MongoDB é mais ergonômica. Para os casos extremos, você quer o Postgres.
+
+Implementei o Kaptanto normalizando os dois em um mesmo schema de evento, então os consumidores não precisam saber de qual fonte estão lendo:
+
+```json
+{
+  "operation": "update",
+  "table": "orders",
+  "before": { "status": "pending" },
+  "after":  { "status": "shipped" }
+}
+```
+
+## As Partes Difíceis
+
+Ler o WAL é a parte fácil da parada. O difícil é tudo ao redor.
+
+### O Problema do Snapshot
+
+Quando você se conecta pela primeira vez, não quer só as mudanças futuras, mas também quer o estado atual. Mas você não pode tirar um snapshot e depois iniciar o stream de forma independente. Existe uma janela entre esses dois passos onde escritas acontecem, e você vai ou perder elas ou vê-las duas vezes.
+
+A solução que eu trabalhei foi **backfills coordenados por watermark**:
+
+O kaptanto:
+
+1. Abre o replication slot primeiro (começa a bufferizar mudanças do WAL imediatamente)
+2. Tira um snapshot consistente da tabela
+3. Streama o snapshot como eventos `read`
+4. Começa a aplicar o WAL bufferizado, mas pula tudo que é mais antigo que o ponto do snapshot
+
+O slot abre antes do snapshot, então nada é perdido. O watermark diz ao stream onde o snapshot terminou, então nada é duplicado.
+
+### Durabilidade
+
+O que acontece na janela entre "Kaptanto recebeu o evento" e "o consumidor efetivamente recebeu"?
+
+Sem um armazenamento intermediário, um crash significa eventos perdidos ou re-entrega sem como deduplicar. O Kaptanto escreve cada evento em um log embedded (Badger) antes de avançar o checkpoint do Postgres. O invariante é simples: o checkpoint da fonte só avança depois que o evento está durável em disco.
+
+```json
+{
+  "idempotency_key": "postgres:public.orders:1234:update:0/1A2B3C",
+  "operation": "update",
+  "before": { "status": "pending" },
+  "after":  { "status": "shipped" }
+}
+```
+
+A `idempotency_key` é determinística. Consumidores que querem processamento exactly-once podem usá-la para detectar e pular duplicatas. Quem não precisar pode ignorar.
+
+### Ordenação por Chave
+
+Dois updates na mesma linha não podem chegar fora de ordem. O Kaptanto usa o LSN (uma posição monotonicamente crescente no WAL) para garantir ordenação por chave antes da entrega. Eventos de linhas diferentes podem ser entregues concorrentemente. Eventos da mesma chave primária são sempre sequenciais.
+
+### Alta Disponibilidade
+
+Pergunta: Quando o processo cai, quem assume?
+
+Resposta: Um advisory lock do Postgres vinculado ao nome do replication slot. Apenas uma instância do Kaptanto pode segurá-lo por vez. Logo, o ideal é rodar duas instâncias, uma ativa, uma standby. O standby faz polling do lock a cada alguns segundos. Quando o primário morre, o standby adquire o lock e assume em cerca de 5 segundos, retomando a partir do último checkpoint.
+
+Só um lock do Postgres. Como eu disse... você só precisa de Postgres.
+
+## Por Que Go?
+
+Considerei algumas opções. Python nunca foi realmente candidato pra uma ferramenta que precisa ser distribuída como um binário único sem dependências de runtime. Node.js, mesmo problema. Java... não. Pensei genuinamente em Elixir, pela concorrência, mas tenho pouquíssimo conhecimento da lang, o que poderia me fazer escorregar em problemas crônicos de linguagem.
+
+Go foi a escolha óbvia por alguns motivos:
+
+**Binário estático único.** `go build` e você tem um arquivo que pode jogar em qualquer lugar. Funciona em Docker, em bare metal, em Lambda, em Raspberry Pi, e na sua geladeira.
+
+**Modelo de concorrência ótimo.** CDC é inerentemente concorrente, você precisa ler o WAL, escrever no log embedded, fazer fanout para múltiplos consumidores, gerenciar conexões SSE, servir métricas. Goroutines e channels tornam isso direto de raciocinar. E de uma maneira clara na linguagem. 
+
+**O ecossistema.** `jackc/pglogrepl` é a implementação Go de referência para replicação lógica do Postgres. O driver oficial do MongoDB é Go-first. O Badger (a key-value store embedded) é Go puro. Não precisei brigar com a linguagem pra construir isso.
+
+**Cross-compilation.** Fazer um binário Linux a partir do Mac é uma flag: `GOOS=linux go build`. Isso importa muito quando você tá distribuindo uma CLI.
+
+## A Aventura com Rust
+
+Em algum momento tive a ideia: e se eu reescrever o decoder do WAL e o serializer JSON em Rust? O parser do WAL é a parte que roda em cada evento individual. Torna ele rápido, então logo torna tudo rápido. Como eu gosto muito de Rust, decidi me aventurar.
+
+Então eu construí o `kaptanto-ffi`: uma biblioteca Rust que decodifica dados de coluna do pgoutput e serializa linhas para JSON, chamada a partir do Go via CGO. O código Rust cuida da decodificação de tipos de coluna, merging de TOAST (a forma do Postgres de armazenar valores grandes), e saída JSON com ordenação determinística de chaves.
+
+```rust
+#[no_mangle]
+pub extern "C" fn kaptanto_decode_serialize(
+    col_data: *const c_uchar,
+    col_len: usize,
+    schema_json: *const c_uchar,
+    schema_len: usize,
+    out_len: *mut usize,
+) -> *mut c_uchar {
+    std::panic::catch_unwind(|| {
+        decoder::decode_serialize(col_data, col_len, schema_json, schema_len, out_len)
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+```
+
+Fiquei bem satisfeito com isso. O decoder em Rust é rápido. O código é limpo... Só que aí eu rodei os benchmarks.
+
+## Os Números
+
+Construí um suite de benchmark que compara o Kaptanto contra o Debezium (o padrão da indústria em Java) e o Sequin. Tudo testado contra Postgres 16, Apple M-series, Docker Desktop.
+
+Aqui está o resultado de throughput:
+
+| Ferramenta | Steady (eps) | Large Batch (eps) |
+|------------|-------------|-------------------|
+| **kaptanto** | **4.805** | **36.267** |
+| kaptanto-rust | 3.559 | 31.883 |
+| Debezium | 128 | 150 |
+| Sequin | 220 | 324 |
+
+O Kaptanto é **37× mais rápido que o Debezium** em estado estável. Em cenários de batch grande, **240× mais rápido**.
+
+E aí vem a parte engraçada: **kaptanto-rust é mais lento que o kaptanto puro**.
+
+(KKKKKKKKKKKKK, eu sou uma farsa)
+
+O caminho do FFI em Rust é mais rápido por operação. Mas o CGO tem um overhead fixo por chamada (uns 50–100ns) e quando você está chamando ele para cada evento individual do WAL, esse overhead se acumula e cancela o ganho no parsing. A versão Rust ganha em latência (p50: 993ms vs 1.147ms) e tempo de recovery (3.1s vs 4.3s). Mas em throughput puro, o Go simples vence porque pula o trampoline do CGO.
+
+A especificação do Kaptanto mira 500k+ eventos/seg em hardware Linux real, e o FFI Rust é pensado para essa escala. Em um SSD NVMe sem o gargalo do virtiofs do Docker Desktop, o log embedded para de ser o limitante e o decoder vira o hot path de novo. É quando a versão Rust deve ganhar.
+
+Por enquanto: o binário Go é o que vai pro ar. O experimento em Rust está no repositório e vai importar mais pra frente. Vocês podem usar? Sim. Mas não tem necessidade alguma xD
+
+## Como Fica na Prática
+
+```bash
+curl -fsSL https://get.kaptan.to | sh
+
+kaptanto \
+  --source "postgres://localhost:5432/meubanco" \
+  --tables public.orders,public.users \
+  --output stdout | jq .
+```
+
+A primeira execução faz snapshot das tabelas e depois streama as mudanças ao vivo. Cada insert, update, delete é emitido no momento em que acontece.
+
+Nessa versão, temos três formatos de saída:
+- **stdout** — NDJSON, pipe pra onde quiser. Aqui você pode dividir um serviço na mesma máquina que vai olhar pro arquivo. 
+- **SSE** — HTTP stream, cada consumidor rastreia seu próprio cursor, reconexões retomam exatamente de onde pararam
+- **gRPC** — streaming tipado, alto throughput, acks em batch
+
+[kaptan.to](https://kaptan.to) tem a documentação completa, metodologia de benchmark, e comparação com as alternativas.
+
+## Próximos passos
+
+Tem muita coisa pra melhorar aqui em relação aos concorrentes, não vou mentir, por isso mesmo isso aqui é a v0.1.0.
+
+Precisamos deixar isso factivelmente distribuído, e disponibilizar mais integrações diretamente. Fica mais interessante quando temos 3 instâncias rodando e olhando pro banco, publicando automaticamente numa fila que vai reagir às mudanças.
+
+Mas tem muita coisa que ainda não sei como fazer da melhor forma, e vou aprendendo no processo. Isso leva tempo, e não vou desrespeitar o processo de aprendizado pra entregar uma solução porca só por entregar.
+
+Mas tá no caminho. E tá open-source, então sintam-se a vontade pra me ajudar na minha missão.
+
+---
+
+Voltando ao começo: sim, eu criei o youjustneedpostgres.com argumentando usar Postgres pra tudo, e depois construí uma ferramenta que te faz rodar `ALTER TABLE ... REPLICA IDENTITY FULL` e pensar em replication slots. Mas o ponto se mantém, tá? O Postgres consegue fazer mais do que você imagina. O WAL é um registro completo, ordenado e durável de cada transição de estado no seu banco. Quando você começa a usá-lo, vários problemas arquiteturais ficam muito mais simples.
+
+Seu banco, continua fazendo cada vez mais, te custando cada vez menos.
+
+Dúvidas? Deixa nos comentários!
+
+Até a próxima!
