@@ -12,6 +12,30 @@ type ProjectsData = {
 const projectsData: ProjectsData = {
   en: [
     {
+      title: 'Kaptanto',
+      description: `A CDC tool in a single static Go binary. Connects to Postgres WAL or MongoDB Change Streams and emits a unified stream of events via stdout (NDJSON), HTTP Server-Sent Events, or gRPC — with durable logging, per-consumer cursors, and high-availability failover.`,
+      imgSrc: '/static/images/kaptanto_logo.png',
+      href: 'https://github.com/olucasandrade/kaptanto',
+    },
+    {
+      title: 'SDPD — Systems Design Police Department',
+      description: `A gamified learning platform that teaches distributed systems design through 33 interactive detective cases. Investigate system failures, diagnose root causes, and recommend fixes across replication, consistency, caching, messaging, and more.`,
+      imgSrc: '/static/images/sdpd_logo.png',
+      href: 'https://github.com/olucasandrade/sdpd',
+    },
+    {
+      title: 'rsight',
+      description: `A fast terminal search tool for macOS. Search files, folders, file contents, and AI conversations (Claude Code, Cursor, Codex) across your entire home directory from a single interface, with instant streaming results.`,
+      imgSrc: '/static/images/rsight_logo.png',
+      href: 'https://github.com/olucasandrade/rsight',
+    },
+    {
+      title: 'You Just Need Postgres',
+      description: `A site and article making the case that Postgres can replace Redis, Elasticsearch, MongoDB, and RabbitMQ for most applications — before you add another tool to your stack, ask if Postgres already does it.`,
+      imgSrc: '/static/images/youjustneedpostgres_logo.png',
+      href: 'https://youjustneedpostgres.com',
+    },
+    {
       title: 'Yeon',
       description: `A comprehensive platform for artists to manage their musical career, maximize earnings, and connect with fans. It offers smart management, fan engagement, direct monetization, crowdfunding tools, and an AI-assisted release planner.`,
       imgSrc: '/static/images/yeon_logo.webp',
@@ -50,6 +74,30 @@ const projectsData: ProjectsData = {
   ],
 
   pt: [
+    {
+      title: 'Kaptanto',
+      description: `Uma ferramenta de CDC em um único binário estático Go. Conecta-se ao WAL do Postgres ou ao Change Streams do MongoDB e emite um stream unificado de eventos via stdout (NDJSON), HTTP Server-Sent Events ou gRPC — com log durável, cursores por consumidor e failover de alta disponibilidade.`,
+      imgSrc: '/static/images/kaptanto_logo.png',
+      href: 'https://github.com/olucasandrade/kaptanto',
+    },
+    {
+      title: 'SDPD — Systems Design Police Department',
+      description: `Uma plataforma de aprendizado gamificada que ensina design de sistemas distribuídos através de 33 casos interativos no estilo detetive. Investigue falhas de sistema, diagnostique causas raiz e recomende correções em replicação, consistência, cache, mensageria e muito mais.`,
+      imgSrc: '/static/images/sdpd_logo.png',
+      href: 'https://github.com/olucasandrade/sdpd',
+    },
+    {
+      title: 'rsight',
+      description: `Uma ferramenta de busca terminal rápida para macOS. Pesquise arquivos, pastas, conteúdo de arquivos e conversas de IA (Claude Code, Cursor, Codex) em todo o seu diretório home a partir de uma única interface, com resultados instantâneos em streaming.`,
+      imgSrc: '/static/images/rsight_logo.png',
+      href: 'https://github.com/olucasandrade/rsight',
+    },
+    {
+      title: 'Você Só Precisa de Postgres',
+      description: `Um site e artigo defendendo que o Postgres pode substituir Redis, Elasticsearch, MongoDB e RabbitMQ na maioria das aplicações — antes de adicionar mais uma ferramenta ao seu stack, pergunte se o Postgres já faz isso.`,
+      imgSrc: '/static/images/youjustneedpostgres_logo.png',
+      href: 'https://youjustneedpostgres.com',
+    },
     {
       title: 'Yeon',
       description: `Uma plataforma completa para artistas gerenciarem sua carreira musical, maximizarem ganhos e se conectarem com fãs. Oferece gestão inteligente, engajamento de fãs, monetização direta, ferramentas de crowdfunding e um planejador de lançamentos assistido por IA.`,
