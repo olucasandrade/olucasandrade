@@ -357,6 +357,7 @@ export default function Terminal() {
               className="ml-1 flex-1 border-none bg-transparent font-mono text-sm text-green-400 caret-green-400 outline-none"
               spellCheck={false}
               autoComplete="off"
+              // eslint-disable-next-line jsx-a11y/no-autofocus -- single-purpose command prompt; auto-focus is expected and surfaces the mobile keyboard on load
               autoFocus
               inputMode="text"
               autoCapitalize="none"
