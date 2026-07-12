@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useSpring, animated } from '@react-spring/web'
+import { motion } from 'framer-motion'
 
 export const defaultProperties = {
   dark: {
@@ -32,7 +32,7 @@ export const defaultProperties = {
       opacity: 1,
     },
   },
-  springConfig: { mass: 4, tension: 250, friction: 35 },
+  springConfig: { mass: 4, stiffness: 250, damping: 35 },
 }
 
 let REACT_TOGGLE_DARK_MODE_GLOBAL_ID = 0
@@ -73,39 +73,15 @@ export const DarkModeSwitch: React.FC<Props> = ({
   }, [animationProperties])
 
   const { circle, svg, lines, mask } = properties[checked ? 'dark' : 'light']
-
-  const svgContainerProps = useSpring({
-    transform: svg.transform,
-    config: animationProperties.springConfig,
-  })
-
-  const centerCircleProps = useSpring({
-    r: circle.r,
-    config: animationProperties.springConfig,
-  })
-
-  const maskedCircleProps = useSpring({
-    cx: mask.cx,
-    cy: mask.cy,
-    config: animationProperties.springConfig,
-  })
-
-  const linesProps = useSpring({
-    opacity: lines.opacity,
-    config: animationProperties.springConfig,
-  })
+  const springTransition = { type: 'spring' as const, ...animationProperties.springConfig }
 
   const toggle = () => onChange(!checked)
 
   const uniqueMaskId = `circle-mask-${id}`
 
-  const AnimatedSvg = animated('svg')
-  const AnimatedCircle = animated('circle')
-  const AnimatedG = animated('g')
-
   return (
     <div className="flex">
-      <AnimatedSvg
+      <motion.svg
         xmlns="http://www.w3.org/2000/svg"
         width={size}
         height={size}
@@ -117,26 +93,37 @@ export const DarkModeSwitch: React.FC<Props> = ({
         strokeLinejoin="round"
         stroke="currentColor"
         onClick={toggle}
+        animate={{ transform: svg.transform }}
+        transition={springTransition}
         style={{
           cursor: 'pointer',
-          ...svgContainerProps,
           ...style,
         }}
         {...rest}
       >
         <mask id={uniqueMaskId}>
           <rect x="0" y="0" width="100%" height="100%" fill="white" />
-          <AnimatedCircle cx={maskedCircleProps.cx} cy={maskedCircleProps.cy} r="9" fill="black" />
+          <motion.circle
+            animate={{ cx: mask.cx, cy: mask.cy }}
+            transition={springTransition}
+            r="9"
+            fill="black"
+          />
         </mask>
 
-        <AnimatedCircle
+        <motion.circle
           cx="12"
           cy="12"
-          r={centerCircleProps.r}
+          animate={{ r: circle.r }}
+          transition={springTransition}
           fill={checked ? moonColor : sunColor}
           mask={`url(#${uniqueMaskId})`}
         />
-        <AnimatedG style={{ opacity: linesProps.opacity }} stroke="currentColor">
+        <motion.g
+          animate={{ opacity: lines.opacity }}
+          transition={springTransition}
+          stroke="currentColor"
+        >
           <line x1="12" y1="1" x2="12" y2="3" />
           <line x1="12" y1="21" x2="12" y2="23" />
           <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
@@ -145,8 +132,8 @@ export const DarkModeSwitch: React.FC<Props> = ({
           <line x1="21" y1="12" x2="23" y2="12" />
           <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
           <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-        </AnimatedG>
-      </AnimatedSvg>
+        </motion.g>
+      </motion.svg>
     </div>
   )
 }
