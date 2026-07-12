@@ -4,6 +4,7 @@ import FeaturedLayout from '@/layouts/FeaturedLayout'
 import HomeLayout from '@/layouts/HomeLayout'
 import HeroSection from '@/components/home/HeroSection'
 import ExperienceSummary from '@/components/home/ExperienceSummary'
+import VideosTeaser from '@/components/home/VideosTeaser'
 import { LocaleTypes } from './i18n/settings'
 
 interface PageProps {
@@ -27,6 +28,7 @@ export default async function Page({ params }: PageProps) {
         <FeaturedLayout posts={hasFeaturedPosts} params={{ locale }} />
       )}
       <ExperienceSummary />
+      <VideosTeaser locale={locale} />
       <HomeLayout posts={filteredPosts} params={{ locale }} />
     </>
   )

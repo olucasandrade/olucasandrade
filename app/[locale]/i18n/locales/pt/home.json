@@ -35,5 +35,7 @@
   "moretags": "Mais tags",
   "lesstags": "Mostrar menos",
   "moretags_aria": "Mostrar mais tags",
-  "lesstags_aria": "Mostrar menos tags"
+  "lesstags_aria": "Mostrar menos tags",
+  "latestVideos": "Vídeos recentes",
+  "allVideos": "Todos os vídeos"
 }
