@@ -1,0 +1,9 @@
+{
+  "title": "Vídeos",
+  "description": "Clipes técnicos curtos — demos de projetos, dicas de Postgres e explicações de systems design.",
+  "empty": "Nenhum vídeo ainda. Os primeiros clipes chegam em breve!",
+  "playAria": "Reproduzir vídeo: ",
+  "languageBadge": "Idioma",
+  "relatedProject": "Projeto relacionado",
+  "relatedPost": "Artigo relacionado"
+}

@@ -1,0 +1,9 @@
+{
+  "title": "Videos",
+  "description": "Short technical clips — project demos, Postgres tips, and systems design explainers.",
+  "empty": "No videos yet. First clips are coming soon!",
+  "playAria": "Play video: ",
+  "languageBadge": "Language",
+  "relatedProject": "Related project",
+  "relatedPost": "Related article"
+}
