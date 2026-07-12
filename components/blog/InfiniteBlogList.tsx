@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { formatDate } from 'pliny/utils/formatDate'
 import { CoreContent } from 'pliny/utils/contentlayer'
@@ -111,6 +111,20 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
   useEffect(() => {
     setDisplayedPosts(POSTS_PER_LOAD)
   }, [searchTerm, selectedTags])
+
+  // Auto-load the next page ~400px before the sentinel scrolls into
+  // view; the Load More button below stays as a functional fallback.
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore) return
+    const observer = new IntersectionObserver(
+      (entries) => entries[0].isIntersecting && setDisplayedPosts((p) => p + POSTS_PER_LOAD),
+      { rootMargin: '400px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore])
 
   // Handle tag selection
   const toggleTag = useCallback((tag: string) => {
@@ -272,14 +286,17 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
         {/* Load More Button */}
         {hasMore && (
-          <div className="mt-12 flex justify-center">
-            <button
-              onClick={loadMore}
-              className="rounded-lg bg-primary-500 px-6 py-3 font-medium text-white transition-colors duration-200 hover:bg-primary-600"
-            >
-              {t('more')}
-            </button>
-          </div>
+          <>
+            <div ref={sentinelRef} aria-hidden="true" />
+            <div className="mt-12 flex justify-center">
+              <button
+                onClick={loadMore}
+                className="rounded-lg bg-primary-500 px-6 py-3 font-medium text-white transition-colors duration-200 hover:bg-primary-600"
+              >
+                {t('more')}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
