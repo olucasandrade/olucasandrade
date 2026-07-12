@@ -33,7 +33,7 @@ export function genPageMetadata({
       description: description || maindescription[locale],
       url: './',
       siteName: maintitle[locale],
-      images: image ? [image] : [siteMetadata.socialBanner],
+      images: image ? [image] : [`/og?title=${encodeURIComponent(title)}`],
       locale: locale,
       type: 'website',
     },
@@ -43,7 +43,7 @@ export function genPageMetadata({
       site: siteMetadata.siteUrl,
       creator: siteMetadata.author,
       card: 'summary_large_image',
-      images: image ? [image] : [siteMetadata.socialBanner],
+      images: image ? [image] : [`/og?title=${encodeURIComponent(title)}`],
     },
     ...rest,
   }
