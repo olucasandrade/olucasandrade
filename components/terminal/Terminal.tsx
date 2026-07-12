@@ -27,8 +27,8 @@ export default function Terminal() {
       type: 'output',
       content:
         locale === 'pt'
-          ? 'Bem-vindo ao terminal de Lucas Andrade!\nDigite "help" para ver os comandos disponíveis.'
-          : 'Welcome to Lucas Andrade\'s terminal!\nType "help" to see available commands.',
+          ? 'Bem-vindo ao terminal de Lucas Andrade!\nDigite "help" para ver os comandos disponíveis.\n\nExperimente: help · projects · snake'
+          : 'Welcome to Lucas Andrade\'s terminal!\nType "help" to see available commands.\n\nTry: help · projects · snake',
     },
   ])
   const [input, setInput] = useState('')
@@ -357,6 +357,10 @@ export default function Terminal() {
               className="ml-1 flex-1 border-none bg-transparent font-mono text-sm text-green-400 caret-green-400 outline-none"
               spellCheck={false}
               autoComplete="off"
+              autoFocus
+              inputMode="text"
+              autoCapitalize="none"
+              autoCorrect="off"
             />
             <span className="animate-pulse text-green-400">_</span>
           </div>

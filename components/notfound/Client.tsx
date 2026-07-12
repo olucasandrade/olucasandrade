@@ -15,9 +15,13 @@ export default function NotFoundclient() {
         </h1>
       </div>
       <div className="max-w-md">
+        {/* 3D slot: dropped-packet scene, see docs/plans/03-3d-animations.md */}
         <p className="mb-4 text-xl font-bold leading-normal md:text-2xl">{t('title')}</p>
         <p className="mb-8">{t('description')}</p>
-        <Button href={`/${locale}`} text={t('back')} />
+        <div className="flex flex-wrap gap-3">
+          <Button href={`/${locale}`} text={t('back')} />
+          <Button href={`/${locale}/blog`} text={t('blog')} />
+        </div>
       </div>
     </div>
   )
