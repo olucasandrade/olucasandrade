@@ -55,7 +55,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
   const [showAllTags, setShowAllTags] = useState(false)
 
   // Fetch blog stats for all posts
-  const { stats: blogStats } = useBlogStats(locale)
+  const { stats: blogStats, isLoading: isBlogStatsLoading } = useBlogStats(locale)
 
   // Get all unique tags
   const allTags = useMemo(() => {
@@ -210,7 +210,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
           className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
         >
           {postsToShow.map((post) => {
-            const { slug, date, title, summary, tags } = post
+            const { slug, date, title, summary, tags, readingTime } = post
             return (
               <motion.article
                 key={slug}
@@ -239,6 +239,9 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                   <div className="flex items-center gap-4">
                     <time dateTime={date} className="text-sm text-gray-500 dark:text-gray-400">
                       {formatDate(date, locale)}
+                      {readingTime && (
+                        <> &middot; {Math.ceil((readingTime as { minutes: number }).minutes)} min</>
+                      )}
                     </time>
                   </div>
                   <Link
@@ -249,7 +252,11 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                   </Link>
                 </div>
                 <div>
-                  <BlogStatsDisplay views={blogStats[`blog-stats:${slug}`]?.views || 0} size="sm" />
+                  <BlogStatsDisplay
+                    views={blogStats[`blog-stats:${slug}`]?.views || 0}
+                    isLoading={isBlogStatsLoading}
+                    size="sm"
+                  />
                 </div>
               </motion.article>
             )
