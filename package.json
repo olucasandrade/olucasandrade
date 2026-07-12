@@ -1,5 +1,5 @@
 {
-  "name": "tailwind-nextjs-starter-blog-i18n",
+  "name": "olucasandrade",
   "version": "2.2.0",
   "private": true,
   "scripts": {
@@ -42,9 +42,7 @@
     "react-h5-audio-player": "^3.9.3",
     "react-hot-toast": "^2.4.1",
     "react-i18next": "^15.2.0",
-    "react-spring": "^9.7.5",
     "reading-time": "^1.5.0",
-    "redis": "^5.8.2",
     "rehype-autolink-headings": "^7.1.0",
     "rehype-citation": "^2.2.2",
     "rehype-katex": "^7.0.1",
@@ -84,5 +82,5 @@
       "prettier --write"
     ]
   },
-  "packageManager": "yarn@4.0.2"
+  "packageManager": "bun@1.2.21"
 }
