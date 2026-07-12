@@ -11,7 +11,7 @@ import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import { useContactModal } from '@/components/formspree/store'
 
-const keywords = ['Typescript', 'Go', 'Rust', 'AWS', 'GraphQL']
+const keywords = ['TypeScript', 'Go', 'PostgreSQL', 'React', 'Python']
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -34,6 +34,7 @@ export default function HeroSection() {
 
   useEffect(() => {
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
       setCurrentKeyword((prev) => (prev + 1) % keywords.length)
     }, 2000)
     return () => clearInterval(interval)
@@ -71,7 +72,9 @@ export default function HeroSection() {
           className="mt-3 flex items-center gap-2 text-lg text-gray-600 dark:text-gray-300 md:text-xl"
         >
           <span>{t('subtitle')}</span>
-          <span className="inline-block w-32 text-left">
+          <span className="relative inline-grid text-left">
+            {/* invisible sizer: longest keyword pins the width */}
+            <span className="invisible font-semibold [grid-area:1/1]">PostgreSQL</span>
             <AnimatePresence mode="wait">
               <motion.span
                 key={keywords[currentKeyword]}
@@ -79,7 +82,7 @@ export default function HeroSection() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
-                className="inline-block font-semibold text-primary-500"
+                className="inline-block font-semibold text-primary-500 [grid-area:1/1]"
               >
                 {keywords[currentKeyword]}
               </motion.span>
