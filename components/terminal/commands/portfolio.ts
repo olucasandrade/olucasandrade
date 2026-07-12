@@ -133,8 +133,8 @@ export function executeCommand(
       return {
         output:
           locale === 'pt'
-            ? '> Abrindo currículo... Acesse olucasandrade.dev/about para ver mais!'
-            : '> Opening resume... Visit olucasandrade.dev/about to learn more!',
+            ? '> Abrindo currículo... Acesse olucasandrade.com/about para ver mais!'
+            : '> Opening resume... Visit olucasandrade.com/about to learn more!',
       }
     case 'play snake':
       return { output: '', special: 'snake' }
