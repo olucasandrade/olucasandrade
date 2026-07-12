@@ -37,6 +37,17 @@ async function upstashSet(key: string, value: string): Promise<void> {
   }
 }
 
+async function upstashIncr(key: string): Promise<number> {
+  if (!upstashConfigured()) return 0
+  const res = await fetch(`${REST_URL}/incr/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${REST_TOKEN}` },
+  })
+  if (!res.ok) throw new Error(`Upstash INCR failed: ${res.status}`)
+  const body = (await res.json()) as { result: number }
+  return body.result
+}
+
 async function upstashScan(
   cursor: string,
   pattern = '*',
@@ -72,7 +83,7 @@ async function upstashMGet(keys: string[]): Promise<(string | null)[]> {
   return (body as any)?.result ?? []
 }
 
-async function getAllKeysAndValues(pattern = '*') {
+async function getAllKeysAndValues(pattern = 'blog-stats:*') {
   const keys: string[] = []
   let cursor = '0'
 
@@ -88,8 +99,27 @@ async function getAllKeysAndValues(pattern = '*') {
 
   console.log(keys, values[0])
 
-  return keys.reduce<Record<string, BlogStats | null>>((acc, key, i) => {
-    acc[key] = values[i] ? JSON.parse(values[i]) : null
+  // legacy blob holds pre-2026 counts; integer key holds increments since
+  return keys.reduce<Record<string, { views: number }>>((acc, key, i) => {
+    const value = values[i]
+    if (value === null || value === undefined) return acc
+
+    if (key.endsWith(':views')) {
+      const baseKey = key.slice(0, -':views'.length)
+      const counter = Number.parseInt(value, 10)
+      if (!Number.isNaN(counter)) {
+        acc[baseKey] = { views: (acc[baseKey]?.views ?? 0) + counter }
+      }
+    } else {
+      let parsed: Partial<BlogStats> = {}
+      try {
+        parsed = JSON.parse(value)
+      } catch {
+        parsed = {}
+      }
+      const legacyViews = typeof parsed.views === 'number' ? parsed.views : 0
+      acc[key] = { views: (acc[key]?.views ?? 0) + legacyViews }
+    }
     return acc
   }, {})
 }
@@ -117,25 +147,23 @@ export async function writeBlogStats(slug: string, stats: BlogStats): Promise<vo
 }
 
 // Get stats for a specific post
+// legacy blob holds pre-2026 counts; integer key holds increments since
 export async function getPostStats(slug: string): Promise<{ likes: number; views: number }> {
-  const stats = await getBlogStatsBySlug(slug)
+  const [legacy, counter] = await Promise.all([
+    getBlogStatsBySlug(slug),
+    upstashGet(`blog-stats:${slug}:views`),
+  ])
+  const incremented = counter ? Number.parseInt(counter, 10) : 0
   return {
-    likes: stats?.likes || 0,
-    views: stats?.views || 0,
+    likes: legacy.likes,
+    views: legacy.views + (Number.isNaN(incremented) ? 0 : incremented),
   }
 }
 
-// Increment view count
+// Increment view count (atomic INCR on a dedicated integer key)
 export async function incrementViews(slug: string): Promise<{ likes: number; views: number }> {
-  const stats = await getBlogStatsBySlug(slug)
-
-  stats.views += 1
-  await writeBlogStats(slug, stats)
-
-  return {
-    likes: stats.likes,
-    views: stats.views,
-  }
+  const views = await upstashIncr(`blog-stats:${slug}:views`)
+  return { likes: 0, views }
 }
 
 // Toggle like (add or remove)
@@ -180,7 +208,7 @@ export async function hasUserLiked(slug: string, userId: string): Promise<boolea
 }
 
 // Get all posts stats (for blog list pages)
-export async function getAllPostsStats(): Promise<Record<string, BlogStats | null>> {
+export async function getAllPostsStats(): Promise<Record<string, { views: number }>> {
   const stats = await getAllKeysAndValues('blog-stats:*')
   return stats
 }
