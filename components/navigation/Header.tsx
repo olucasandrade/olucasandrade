@@ -3,6 +3,7 @@
 import { useParams, usePathname } from 'next/navigation'
 import siteMetadata from '@/data/siteMetadata'
 import headerNavLinks from '@/data/headerNavLinks'
+import videosData from '@/data/videosData'
 import Logo from '@/data/logo.svg'
 import Link from '../mdxcomponents/Link'
 import AuthorsMenu from './AuthorsMenu'
@@ -13,6 +14,12 @@ import SearchButton from '../search/SearchButton'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import type { LocaleTypes } from 'app/[locale]/i18n/settings'
 import { motion } from 'framer-motion'
+
+// Hidden while empty: the /videos nav link only shows once the first
+// video is published (see data/videosData.ts).
+const visibleLinks = headerNavLinks.filter(
+  (link) => link.href !== '/videos' || videosData.length > 0
+)
 
 const Header = () => {
   const locale = useParams()?.locale as LocaleTypes
@@ -40,7 +47,7 @@ const Header = () => {
           </Link>
         </div>
         <div className="flex items-center space-x-4 leading-5 sm:space-x-6">
-          {headerNavLinks
+          {visibleLinks
             .filter((link) => {
               return link.href !== '/'
             })

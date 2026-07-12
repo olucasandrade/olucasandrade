@@ -2,6 +2,7 @@ const headerNavLinks: { href?: string; title: string }[] = [
   { href: '/', title: 'Home' },
   { href: '/blog', title: 'Blog' },
   { href: '/projects', title: 'Projects' },
+  { href: '/videos', title: 'Videos' },
   { href: '/experience', title: 'Experience' },
   { href: '/terminal', title: 'Terminal' },
 ]
