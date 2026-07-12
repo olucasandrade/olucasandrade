@@ -31,7 +31,6 @@ interface InfiniteBlogListProps {
 }
 
 const POSTS_PER_LOAD = 6
-const SEARCH_DEBOUNCE_MS = 300
 
 const container = {
   hidden: { opacity: 0 },
@@ -53,7 +52,6 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [displayedPosts, setDisplayedPosts] = useState(POSTS_PER_LOAD)
-  const [isLoading, setIsLoading] = useState(false)
   const [showAllTags, setShowAllTags] = useState(false)
 
   // Fetch blog stats for all posts
@@ -105,15 +103,9 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
   // Load more posts
   const loadMore = useCallback(() => {
-    if (isLoading || !hasMore) return
-
-    setIsLoading(true)
-    // Simulate loading delay for better UX
-    setTimeout(() => {
-      setDisplayedPosts((prev) => prev + POSTS_PER_LOAD)
-      setIsLoading(false)
-    }, 300)
-  }, [isLoading, hasMore])
+    if (!hasMore) return
+    setDisplayedPosts((prev) => prev + POSTS_PER_LOAD)
+  }, [hasMore])
 
   // Reset displayed posts when search or tags change
   useEffect(() => {
@@ -129,15 +121,6 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
     setSearchTerm('')
     setSelectedTags([])
   }, [])
-
-  // Debounced search handler
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // Search logic is handled in the filteredPosts memo
-    }, SEARCH_DEBOUNCE_MS)
-
-    return () => clearTimeout(timer)
-  }, [searchTerm])
 
   return (
     <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -285,17 +268,9 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
           <div className="mt-12 flex justify-center">
             <button
               onClick={loadMore}
-              disabled={isLoading}
-              className="rounded-lg bg-primary-500 px-6 py-3 font-medium text-white transition-colors duration-200 hover:bg-primary-600 disabled:cursor-not-allowed disabled:bg-primary-400"
+              className="rounded-lg bg-primary-500 px-6 py-3 font-medium text-white transition-colors duration-200 hover:bg-primary-600"
             >
-              {isLoading ? (
-                <div className="flex items-center space-x-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  <span>{t('loading')}</span>
-                </div>
-              ) : (
-                t('more')
-              )}
+              {t('more')}
             </button>
           </div>
         )}
