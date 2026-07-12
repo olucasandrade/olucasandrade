@@ -1,7 +1,6 @@
 export interface BlogStats {
   likes: number
   views: number
-  likedBy: string[] // Store user IDs/IPs who liked
 }
 
 const REST_URL = process.env.UPSTASH_REDIS_REST_URL
@@ -97,8 +96,6 @@ async function getAllKeysAndValues(pattern = 'blog-stats:*') {
 
   const values = await upstashMGet(keys)
 
-  console.log(keys, values[0])
-
   // legacy blob holds pre-2026 counts; integer key holds increments since
   return keys.reduce<Record<string, { views: number }>>((acc, key, i) => {
     const value = values[i]
@@ -137,7 +134,6 @@ export async function getBlogStatsBySlug(slug: string): Promise<BlogStats> {
   return {
     likes: typeof parsed.likes === 'number' ? parsed.likes : 0,
     views: typeof parsed.views === 'number' ? parsed.views : 0,
-    likedBy: Array.isArray(parsed.likedBy) ? parsed.likedBy : [],
   }
 }
 
@@ -164,47 +160,6 @@ export async function getPostStats(slug: string): Promise<{ likes: number; views
 export async function incrementViews(slug: string): Promise<{ likes: number; views: number }> {
   const views = await upstashIncr(`blog-stats:${slug}:views`)
   return { likes: 0, views }
-}
-
-// Toggle like (add or remove)
-export async function toggleLike(
-  slug: string,
-  userId: string
-): Promise<{
-  likes: number
-  views: number
-  isLiked: boolean
-}> {
-  const stats = await getBlogStatsBySlug(slug)
-
-  if (!stats.likedBy) {
-    stats.likedBy = []
-  }
-
-  const likedBy = stats.likedBy
-  const isCurrentlyLiked = likedBy.includes(userId)
-
-  if (isCurrentlyLiked) {
-    stats.likedBy = likedBy.filter((id) => id !== userId)
-    stats.likes = Math.max(0, stats.likes - 1)
-  } else {
-    stats.likedBy.push(userId)
-    stats.likes += 1
-  }
-
-  await writeBlogStats(slug, stats)
-
-  return {
-    likes: stats.likes,
-    views: stats.views,
-    isLiked: !isCurrentlyLiked,
-  }
-}
-
-// Check if user has liked a post
-export async function hasUserLiked(slug: string, userId: string): Promise<boolean> {
-  const stats = await getBlogStatsBySlug(slug)
-  return stats?.likedBy?.includes(userId) || false
 }
 
 // Get all posts stats (for blog list pages)
