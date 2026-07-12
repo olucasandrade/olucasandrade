@@ -95,8 +95,20 @@ async function getAllKeysAndValues(pattern = '*') {
 }
 
 export async function getBlogStatsBySlug(slug: string): Promise<BlogStats> {
-  const data = (await upstashGet(`blog-stats:${slug}`)) || '{}'
-  return JSON.parse(data) || { likes: 0, views: 0, likedBy: [] }
+  const data = await upstashGet(`blog-stats:${slug}`)
+  let parsed: Partial<BlogStats> = {}
+  if (data) {
+    try {
+      parsed = JSON.parse(data)
+    } catch {
+      parsed = {}
+    }
+  }
+  return {
+    likes: typeof parsed.likes === 'number' ? parsed.likes : 0,
+    views: typeof parsed.views === 'number' ? parsed.views : 0,
+    likedBy: Array.isArray(parsed.likedBy) ? parsed.likedBy : [],
+  }
 }
 
 // Write stats to file
