@@ -3,6 +3,7 @@ import Project from './project'
 import { genPageMetadata } from 'app/[locale]/seo'
 import { createTranslation } from '../i18n/server'
 import { LocaleTypes } from '../i18n/settings'
+import ProjectsBackdrop from '@/components/three/ProjectsBackdrop'
 
 interface PageProps {
   params: Promise<{
@@ -24,6 +25,7 @@ export default async function Projects({ params }: PageProps) {
   const { t } = await createTranslation(locale, 'projects')
   return (
     <>
+      <ProjectsBackdrop />
       <div className="divide-y divide-gray-200 dark:divide-gray-700">
         <div className="space-y-2 pb-8 pt-6 md:space-y-5">
           <div className="text-center md:text-left">
