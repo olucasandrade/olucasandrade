@@ -1,6 +1,6 @@
 'use client'
 
-import { SVGProps, useState } from 'react'
+import { SVGProps, useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from '../mdxcomponents/Link'
 import siteMetadata from '@/data/siteMetadata'
@@ -36,6 +36,15 @@ const MobileNav = () => {
   const [navShow, setNavShow] = useState<boolean>(false)
   const [accordionOpen, setAccordionOpen] = useState<boolean>(false)
 
+  // Guard against a scroll-locked page: if this component unmounts while
+  // the menu is open (e.g. a link navigation swaps out the layout before
+  // onToggleNav's state update commits), restore body scroll on cleanup.
+  useEffect(() => {
+    return () => {
+      document.body.style.overflow = 'auto'
+    }
+  }, [])
+
   const onToggleNav = () => {
     setNavShow((status) => {
       if (status) {
@@ -68,7 +77,7 @@ const MobileNav = () => {
         </svg>
       </button>
       <div
-        className={`fixed left-0 top-0 z-10 my-auto h-full w-full transform overflow-y-auto bg-white opacity-95 duration-300 ease-in-out dark:bg-gray-950 dark:opacity-[0.98] ${
+        className={`fixed left-0 top-0 z-50 my-auto h-full w-full transform overflow-y-auto bg-white opacity-95 duration-300 ease-in-out dark:bg-gray-950 dark:opacity-[0.98] ${
           navShow ? 'translate-x-0' : 'translate-x-full'
         }`}
       >

@@ -119,6 +119,12 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-900 dark:text-white">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-primary-500 focus:px-3 focus:py-2 focus:text-white"
+        >
+          Skip to content
+        </a>
         <LocaleProvider initialLocale={locale}>
           <ThemeProvider>
             <MotionProvider>
@@ -130,7 +136,7 @@ export default async function RootLayout({
                 <div className="flex h-screen flex-col justify-between font-sans">
                   <SearchProvider>
                     <Header />
-                    <main className="mb-auto">
+                    <main id="main-content" className="mb-auto">
                       <PageTransition>{children}</PageTransition>
                     </main>
                   </SearchProvider>

@@ -20,8 +20,8 @@ const Header = () => {
   const pathname = usePathname()
 
   return (
-    <header>
-      <div className="flex items-center justify-between py-10">
+    <header className="sticky top-0 z-40 bg-white/75 backdrop-blur dark:bg-gray-900/75">
+      <div className="flex items-center justify-between py-6">
         <div>
           <Link href={`/${locale}/`} aria-label={siteMetadata.headerTitle}>
             <motion.div
