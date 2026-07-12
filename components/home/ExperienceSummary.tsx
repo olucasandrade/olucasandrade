@@ -22,7 +22,7 @@ export default function ExperienceSummary() {
       <div className="space-y-4">
         {experiences.map((exp, index) => (
           <ScrollReveal key={`${exp.company}-${index}`} delay={index * 0.1}>
-            <div className="rounded-xl border border-gray-200/60 bg-white/80 p-4 backdrop-blur-sm transition-all duration-300 hover:border-primary-500/30 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80 dark:hover:border-primary-500/30">
+            <div className="rounded-xl border border-gray-200/60 bg-white/80 p-4 backdrop-blur-sm transition-all duration-300 hover:border-primary-500/40 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="font-bold text-gray-900 dark:text-gray-100">{exp.role}</h3>

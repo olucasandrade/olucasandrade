@@ -215,7 +215,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
               <motion.article
                 key={slug}
                 variants={item}
-                className="group relative flex flex-col space-y-2 rounded-lg border border-gray-200 p-6 transition-all duration-200 hover:border-primary-500 hover:shadow-lg dark:border-gray-700"
+                className="group relative flex flex-col space-y-2 rounded-xl border border-gray-200/60 bg-white/80 p-6 backdrop-blur-sm transition-all duration-300 hover:border-primary-500/40 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80"
               >
                 <div className="space-y-3">
                   <div className="space-y-2">
