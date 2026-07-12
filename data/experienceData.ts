@@ -14,11 +14,11 @@ type ExperienceData = {
 const experienceData: ExperienceData = {
   en: [
     {
-      company: 'Percona', 
+      company: 'Percona',
       role: 'Fullstack Engineer - Global Services',
       period: 'Jul 2026 - Present',
       description:
-        'Bulding global, impactful products that help our mission to build an awesome observability environment (and open source)',
+        'Building global, impactful products that support our mission of creating a great open-source observability environment',
       technologies: ['Python', 'React', 'Golang', 'PostgreSQL', 'TypeScript', 'MongoDB'],
     },
     {

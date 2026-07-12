@@ -32,10 +32,10 @@ function getPersonSchema() {
     '@context': 'https://schema.org',
     '@type': 'Person',
     name: siteMetadata.author,
-    jobTitle: 'Senior Backend Engineer',
+    jobTitle: 'Fullstack Engineer',
     worksFor: {
       '@type': 'Organization',
-      name: 'SCALIS',
+      name: 'Percona',
     },
     url: siteMetadata.siteUrl,
     sameAs: [siteMetadata.github, siteMetadata.linkedin, siteMetadata.twitter].filter(Boolean),

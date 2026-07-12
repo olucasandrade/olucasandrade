@@ -35,7 +35,7 @@ const helpText: Record<Locale, string> = {
 const aboutText: Record<Locale, string> = {
   en: `
 > Lucas Andrade
-> Senior Backend Engineer @ SCALIS
+> Fullstack Engineer @ Percona
 > Web Instructor @ Tripleten
 
 5+ years building scalable backend systems.
@@ -46,7 +46,7 @@ Based in Brazil. Working globally.
 Languages: Python, Go, Node.js, TypeScript`,
   pt: `
 > Lucas Andrade
-> Engenheiro Backend Senior @ SCALIS
+> Engenheiro Fullstack @ Percona
 > Instrutor Web @ Tripleten
 
 5+ anos construindo sistemas backend escaláveis.
