@@ -4,7 +4,9 @@ import { getAllPostsStats } from '@/lib/blog-stats'
 export async function GET() {
   try {
     const stats = await getAllPostsStats()
-    return NextResponse.json(stats)
+    return NextResponse.json(stats, {
+      headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
+    })
   } catch (error) {
     console.error('Error getting all blog stats:', error)
     return NextResponse.json({ error: 'Failed to get blog stats' }, { status: 500 })
