@@ -30,7 +30,7 @@ export default async function Projects({ params }: PageProps) {
           <div className="flex flex-col items-center space-y-4 md:flex-row md:space-x-6 md:space-y-0">
             <div className="relative h-24 w-24 md:h-32 md:w-32">
               <Image
-                src="/static/images/Pixel_Art_Portrait_of_Stylish_Youth-removebg-preview.png"
+                src="/static/images/avatar-pixel.png"
                 alt="Projects Profile"
                 fill
                 className="rounded-full object-cover"
