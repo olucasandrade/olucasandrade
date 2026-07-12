@@ -326,7 +326,7 @@ export default function Terminal() {
       {/* Terminal content */}
       <div
         ref={terminalRef}
-        className="h-[400px] overflow-y-auto p-4 font-mono text-sm md:h-[500px]"
+        className="relative h-[400px] overflow-y-auto p-4 font-mono text-sm md:h-[500px]"
       >
         {/* Scanline effect */}
         <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(0,255,0,0.03)_0px,rgba(0,255,0,0.03)_1px,transparent_1px,transparent_2px)]" />
