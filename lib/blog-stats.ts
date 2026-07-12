@@ -7,13 +7,12 @@ export interface BlogStats {
 const REST_URL = process.env.UPSTASH_REDIS_REST_URL
 const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN
 
-if (!REST_URL || !REST_TOKEN) {
-  throw new TypeError(
-    'Upstash REST not configured. Please set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.'
-  )
+function upstashConfigured(): boolean {
+  return Boolean(REST_URL && REST_TOKEN)
 }
 
 async function upstashGet(key: string): Promise<string | null> {
+  if (!upstashConfigured()) return null
   const res = await fetch(`${REST_URL}/get/${encodeURIComponent(key)}`, {
     headers: { Authorization: `Bearer ${REST_TOKEN}` },
     cache: 'no-store',
@@ -24,6 +23,7 @@ async function upstashGet(key: string): Promise<string | null> {
 }
 
 async function upstashSet(key: string, value: string): Promise<void> {
+  if (!upstashConfigured()) return
   const res = await fetch(
     `${REST_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}`,
     {
@@ -42,6 +42,7 @@ async function upstashScan(
   pattern = '*',
   count = 100
 ): Promise<{ cursor: string; keys: string[] }> {
+  if (!upstashConfigured()) return { cursor: '0', keys: [] }
   const url = `${REST_URL}/scan/${encodeURIComponent(cursor)}?match=${encodeURIComponent(pattern)}&count=${count}`
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${REST_TOKEN}` },
@@ -57,7 +58,7 @@ async function upstashScan(
 }
 
 async function upstashMGet(keys: string[]): Promise<(string | null)[]> {
-  if (keys.length === 0) return []
+  if (keys.length === 0 || !upstashConfigured()) return []
   const pathKeys = keys.map((k) => encodeURIComponent(k)).join('/')
   const res = await fetch(`${REST_URL}/mget/${pathKeys}`, {
     headers: { Authorization: `Bearer ${REST_TOKEN}` },
