@@ -3,87 +3,39 @@ import { allBlogs, allAuthors } from 'contentlayer/generated'
 import siteMetadata from '@/data/siteMetadata'
 import { fallbackLng, secondLng } from './i18n/locales'
 
+// Default locale (en) lives at the root path; middleware redirects /en/* to /*.
+const localePath = (locale: string, path: string) => {
+  const prefix = locale === fallbackLng ? '' : `/${locale}`
+  return `${siteMetadata.siteUrl}${prefix}${path}`.replace(/\/$/, '') || siteMetadata.siteUrl
+}
+
 export default function sitemap(): MetadataRoute.Sitemap {
-  const siteUrl = siteMetadata.siteUrl
   const today = new Date().toISOString().split('T')[0]
 
   const blogRoutes = allBlogs
     .filter((post) => !post.draft)
-    .flatMap((post) => {
-      const mainUrl = `${siteUrl}/${fallbackLng}/blog/${post.slug}`
-      const alternatepostsUrls: { url: string; lang: string }[] = []
+    .map((post) => ({
+      url: localePath(post.language, `/blog/${post.slug}`),
+      lastModified: post.lastmod || post.date,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    }))
 
-      if (post.language !== fallbackLng) {
-        const alternatepostsUrl = `${siteUrl}/${post.language}/blog/${post.slug}`
-        alternatepostsUrls.push({ url: alternatepostsUrl, lang: post.language })
-      }
+  const authorRoutes = allAuthors.map((author) => ({
+    url: localePath(author.language, `/about/${author.slug}`),
+    lastModified: today,
+    changeFrequency: 'monthly' as const,
+    priority: 0.5,
+  }))
 
-      if (post.language !== secondLng) {
-        const alternatepostsUrl = `${siteUrl}/${secondLng}/blog/${post.slug}`
-        alternatepostsUrls.push({ url: alternatepostsUrl, lang: secondLng })
-      }
+  const staticRoutes = ['', '/blog', '/projects', '/experience', '/terminal'].flatMap((route) =>
+    [fallbackLng, secondLng].map((locale) => ({
+      url: localePath(locale, route),
+      lastModified: today,
+      changeFrequency: 'weekly' as const,
+      priority: route === '' ? 1.0 : route === '/blog' ? 0.9 : 0.8,
+    }))
+  )
 
-      return [
-        {
-          url: mainUrl,
-          lastModified: post.lastmod || post.date,
-          changeFrequency: 'monthly' as const,
-          priority: 0.7,
-        },
-        ...alternatepostsUrls,
-      ]
-    })
-
-  const authorsRoutes = allAuthors.flatMap((author) => {
-    const mainUrl = `${siteUrl}/${fallbackLng}/about/${author.slug}`
-    const alternateauthorsUrls: { url: string; lang: string }[] = []
-
-    if (author.language !== fallbackLng) {
-      const alternateauthorsUrl = `${siteUrl}/${author.language}/about/${author.slug}`
-      alternateauthorsUrls.push({ url: alternateauthorsUrl, lang: author.language })
-    }
-
-    if (author.language !== secondLng) {
-      const alternateauthorsUrl = `${siteUrl}/${secondLng}/about/${author.slug}`
-      alternateauthorsUrls.push({ url: alternateauthorsUrl, lang: secondLng })
-    }
-
-    return [
-      { url: mainUrl, changeFrequency: 'monthly' as const, priority: 0.6 },
-      ...alternateauthorsUrls,
-    ]
-  })
-
-  const routes = ['', 'blog', 'projects', 'tags', 'experience', 'terminal'].flatMap((route) => {
-    const mainUrl = `${siteUrl}/${fallbackLng}/${route}`.replace(/\/$/, '')
-    const alternateUrls: { url: string; lang: string }[] = []
-
-    if (route !== fallbackLng) {
-      const alternateUrl = `${siteUrl}/${fallbackLng}/${route}`.replace(/\/$/, '')
-      alternateUrls.push({ url: alternateUrl, lang: fallbackLng })
-    }
-
-    if (route !== secondLng) {
-      const alternateUrl = `${siteUrl}/${secondLng}/${route}`.replace(/\/$/, '')
-      alternateUrls.push({ url: alternateUrl, lang: secondLng })
-    }
-
-    const priority = route === '' ? 1.0 : route === 'blog' ? 0.9 : 0.8
-
-    return [
-      { url: mainUrl, lastModified: today, changeFrequency: 'weekly' as const, priority },
-      ...alternateUrls,
-    ]
-  })
-
-  const combinedRoutes = [...routes, ...blogRoutes, ...authorsRoutes]
-
-  // Filter out duplicate URLs and undefined values
-  const uniqueRoutes = Array.from(new Set(combinedRoutes.map((route) => route.url)))
-    .map((url) => {
-      return combinedRoutes.find((route) => route.url === url)
-    })
-    .filter((route) => route !== undefined)
-
-  return uniqueRoutes as MetadataRoute.Sitemap
+  return [...staticRoutes, ...blogRoutes, ...authorRoutes]
 }
