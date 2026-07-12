@@ -6,6 +6,8 @@ import { motion, useSpring } from 'framer-motion'
 export default function CustomCursor() {
   const [visible, setVisible] = useState(false)
   const [hovered, setHovered] = useState(false)
+  const [suppressed, setSuppressed] = useState(false)
+  const [windowVisible, setWindowVisible] = useState(true)
 
   const springConfig = { damping: 40, stiffness: 800, mass: 0.2 }
   const cursorX = useSpring(0, springConfig)
@@ -15,6 +17,10 @@ export default function CustomCursor() {
     // Disable on touch devices
     if (typeof window === 'undefined' || 'ontouchstart' in window) return
 
+    // Respect OS-level reduced motion: leave `visible` false so this
+    // component renders nothing and the native cursor is untouched.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+
     setVisible(true)
 
     const moveCursor = (e: MouseEvent) => {
@@ -22,42 +28,50 @@ export default function CustomCursor() {
       cursorY.set(e.clientY)
     }
 
-    const handleMouseOver = (e: MouseEvent) => {
+    const handlePointerOver = (e: PointerEvent) => {
       const target = e.target as HTMLElement
-      if (
-        target.tagName === 'A' ||
-        target.tagName === 'BUTTON' ||
-        target.closest('a') ||
-        target.closest('button') ||
-        target.getAttribute('role') === 'button'
-      ) {
-        setHovered(true)
-      }
+      const interactive = target.closest('a, button, [role="button"]')
+      const nativeCursorTarget = target.closest(
+        'input, textarea, select, iframe, [contenteditable]'
+      )
+
+      setHovered(Boolean(interactive))
+      setSuppressed(Boolean(nativeCursorTarget))
     }
 
-    const handleMouseOut = () => {
-      setHovered(false)
-    }
+    const handleMouseLeave = () => setWindowVisible(false)
+    const handleMouseEnter = () => setWindowVisible(true)
 
     window.addEventListener('mousemove', moveCursor)
-    document.addEventListener('mouseover', handleMouseOver)
-    document.addEventListener('mouseout', handleMouseOut)
+    document.addEventListener('pointerover', handlePointerOver)
+    document.documentElement.addEventListener('mouseleave', handleMouseLeave)
+    document.documentElement.addEventListener('mouseenter', handleMouseEnter)
 
     return () => {
       window.removeEventListener('mousemove', moveCursor)
-      document.removeEventListener('mouseover', handleMouseOver)
-      document.removeEventListener('mouseout', handleMouseOut)
+      document.removeEventListener('pointerover', handlePointerOver)
+      document.documentElement.removeEventListener('mouseleave', handleMouseLeave)
+      document.documentElement.removeEventListener('mouseenter', handleMouseEnter)
     }
   }, [cursorX, cursorY])
 
   if (!visible) return null
 
+  const dimmed = suppressed || !windowVisible
+
   return (
     <>
       <style jsx global>{`
         @media (hover: hover) and (pointer: fine) {
-          * {
-            cursor: none !important;
+          body:not(
+            :has(input:hover, textarea:hover, select:hover, iframe:hover, [contenteditable]:hover)
+          ) {
+            cursor: none;
+          }
+          a,
+          button,
+          [role='button'] {
+            cursor: none;
           }
         }
       `}</style>
@@ -72,6 +86,8 @@ export default function CustomCursor() {
           translateX: '-50%',
           translateY: '-50%',
         }}
+        animate={{ opacity: dimmed ? 0 : 1 }}
+        transition={{ duration: 0.15 }}
       />
       {/* Ring */}
       <motion.div
@@ -86,6 +102,7 @@ export default function CustomCursor() {
           width: hovered ? 48 : 32,
           height: hovered ? 48 : 32,
           borderColor: hovered ? 'rgba(22, 163, 74, 0.8)' : 'rgba(22, 163, 74, 0.3)',
+          opacity: dimmed ? 0 : 1,
         }}
         transition={{ duration: 0.2 }}
       />
