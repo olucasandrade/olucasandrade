@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion'
 import { ReactNode } from 'react'
+import { fadeUp, slideInLeft, slideInRight, fadeIn } from '@/lib/animations'
 
 interface ScrollRevealProps {
   children: ReactNode
@@ -12,10 +13,10 @@ interface ScrollRevealProps {
 }
 
 const directionVariants = {
-  up: { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } },
-  left: { hidden: { opacity: 0, x: -16 }, visible: { opacity: 1, x: 0 } },
-  right: { hidden: { opacity: 0, x: 16 }, visible: { opacity: 1, x: 0 } },
-  fade: { hidden: { opacity: 0 }, visible: { opacity: 1 } },
+  up: fadeUp,
+  left: slideInLeft,
+  right: slideInRight,
+  fade: fadeIn,
 }
 
 export default function ScrollReveal({

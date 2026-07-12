@@ -2,6 +2,7 @@ import { useRef, useCallback } from 'react'
 import { useOuterClick } from '../util/useOuterClick'
 import { motion } from 'framer-motion'
 import { MailIcon } from '../search/icons'
+import { fadeUp, defaultTransition } from '@/lib/animations'
 
 interface cModalProps {
   isOpen?: boolean
@@ -10,11 +11,6 @@ interface cModalProps {
   body?: React.ReactElement
   footer?: React.ReactElement
   disabled?: boolean
-}
-
-const variants = {
-  hidden: { opacity: 0, x: 0, y: -25 },
-  enter: { opacity: 1, x: 0, y: 0 },
 }
 
 export const CModal: React.FC<cModalProps> = ({
@@ -42,10 +38,10 @@ export const CModal: React.FC<cModalProps> = ({
 
   return (
     <motion.div
-      variants={variants}
+      variants={fadeUp}
       initial="hidden"
-      animate="enter"
-      transition={{ type: 'linear' }}
+      animate="visible"
+      transition={defaultTransition}
       className="fixed inset-0 z-50 flex items-center justify-center bg-gray-300/50 p-4 backdrop-blur backdrop-filter dark:bg-black/50"
     >
       <div className="relative mx-auto my-3 h-full w-full sm:h-auto sm:w-2/5 sm:max-w-xl">

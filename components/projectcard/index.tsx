@@ -5,11 +5,7 @@ import { LocaleTypes } from 'app/[locale]/i18n/settings'
 
 import { motion } from 'framer-motion'
 import { useTranslation } from 'app/[locale]/i18n/client'
-
-const variants = {
-  hidden: { opacity: 0, x: 0, y: -25 },
-  enter: { opacity: 1, x: 0, y: 0 },
-}
+import { fadeUp, defaultTransition } from '@/lib/animations'
 
 interface CardProps {
   title: string
@@ -70,11 +66,11 @@ const Card: React.FC<CardProps> = ({ title, description, imgSrc, href }) => {
 
   return (
     <motion.div
-      variants={variants}
+      variants={fadeUp}
       initial="hidden"
-      animate="enter"
+      animate="visible"
       whileHover={{ y: -4 }}
-      transition={{ type: 'linear' }}
+      transition={defaultTransition}
       className="md max-w-[544px] p-4 md:w-1/2"
     >
       {resolvedHref ? (

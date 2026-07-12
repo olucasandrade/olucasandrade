@@ -12,6 +12,7 @@ import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import Image from 'next/image'
 import BlogStatsDisplay from './BlogStatsDisplay'
 import { useBlogStats } from '@/hooks/useBlogStats'
+import { staggerContainer, fadeUp } from '@/lib/animations'
 // Using a simple SVG icon instead of Heroicons to avoid dependency
 const SearchIcon = () => (
   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -31,21 +32,6 @@ interface InfiniteBlogListProps {
 }
 
 const POSTS_PER_LOAD = 6
-
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-}
-
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0 },
-}
 
 export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogListProps) {
   const { t } = useTranslation(locale, 'home')
@@ -218,9 +204,9 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
       <div className="container py-12">
         <motion.div
-          variants={container}
+          variants={staggerContainer}
           initial="hidden"
-          animate="show"
+          animate="visible"
           className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
         >
           {postsToShow.map((post) => {
@@ -228,7 +214,7 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
             return (
               <motion.article
                 key={slug}
-                variants={item}
+                variants={fadeUp}
                 className="group relative flex flex-col space-y-2 rounded-xl border border-gray-200/60 bg-white/80 p-6 backdrop-blur-sm transition-all duration-300 hover:border-primary-500/40 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80"
               >
                 <div className="space-y-3">
