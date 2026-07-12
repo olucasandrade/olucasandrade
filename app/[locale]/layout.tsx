@@ -14,7 +14,7 @@ import { LocaleProvider } from '@/components/locale/LocaleProvider'
 import CustomCursor from '@/components/ui/CustomCursor'
 import PageTransition from '@/components/animations/PageTransition'
 import JsonLd from '@/components/seo/JsonLd'
-import { Metadata } from 'next'
+import { Metadata, Viewport } from 'next'
 import { dir } from 'i18next'
 import { LocaleTypes, locales } from './i18n/settings'
 import TwSizeIndicator from '@/components/helper/TwSizeIndicator'
@@ -28,6 +28,13 @@ const space_grotesk = Space_Grotesk({
   display: 'swap',
   variable: '--font-space-grotesk',
 })
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#fff' },
+    { media: '(prefers-color-scheme: dark)', color: '#000' },
+  ],
+}
 
 export async function generateMetadata({
   params,
@@ -62,6 +69,16 @@ export async function generateMetadata({
         'application/rss+xml': `${siteMetadata.siteUrl}/feed.xml`,
       },
     },
+    icons: {
+      icon: [
+        { url: '/static/favicons/favicon.ico' },
+        { url: '/static/favicons/favicon.png', type: 'image/png' },
+      ],
+      other: [
+        { rel: 'mask-icon', url: '/static/favicons/safari-pinned-tab.svg', color: '#16a34a' },
+      ],
+    },
+    manifest: '/static/favicons/site.webmanifest',
     robots: {
       index: true,
       follow: true,
@@ -100,14 +117,6 @@ export default async function RootLayout({
       className={`${space_grotesk.variable} scroll-smooth`}
       suppressHydrationWarning
     >
-      <link rel="icon" href="/static/favicons/favicon.ico" />
-      <link rel="icon" type="image/png" href="/static/favicons/favicon.png" />
-      <link rel="manifest" href="/static/favicons/site.webmanifest" />
-      <link rel="mask-icon" href="/static/favicons/safari-pinned-tab.svg" color="#16a34a" />
-      <meta name="msapplication-TileColor" content="#000000" />
-      <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff" />
-      <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000" />
-      <link rel="alternate" type="application/rss+xml" href="/feed.xml" />
       <body className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-900 dark:text-white">
         <LocaleProvider initialLocale={locale}>
           <ThemeProvider>
