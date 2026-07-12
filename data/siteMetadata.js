@@ -14,7 +14,6 @@ const siteMetadata = {
   email: 'contato@olucasandrade.com',
   github: 'https://github.com/olucasandrade',
   x: '',
-  twitter: 'https://x.com/olucasandrad',
   facebook: '',
   youtube: '',
   linkedin: 'https://www.linkedin.com/in/lucasandradesouza',

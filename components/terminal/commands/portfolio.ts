@@ -79,14 +79,12 @@ const contactText: Record<Locale, string> = {
 Email:    contato@olucasandrade.com
 GitHub:   github.com/olucasandrade
 LinkedIn: linkedin.com/in/lucasandradesouza
-Twitter:  x.com/olucasandrad
-Website:  olucasandrade.dev`,
+Website:  olucasandrade.com`,
   pt: `
 Email:    contato@olucasandrade.com
 GitHub:   github.com/olucasandrade
 LinkedIn: linkedin.com/in/lucasandradesouza
-Twitter:  x.com/olucasandrad
-Website:  olucasandrade.dev`,
+Website:  olucasandrade.com`,
 }
 
 function getExperienceText(locale: Locale): string {
