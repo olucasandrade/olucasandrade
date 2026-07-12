@@ -37,7 +37,16 @@ export const defaultProperties = {
 
 let REACT_TOGGLE_DARK_MODE_GLOBAL_ID = 0
 
-type SVGProps = Omit<React.HTMLAttributes<HTMLOrSVGElement>, 'onChange'>
+type SVGProps = Omit<
+  React.HTMLAttributes<HTMLOrSVGElement>,
+  | 'onChange'
+  | 'onAnimationStart'
+  | 'onAnimationEnd'
+  | 'onAnimationIteration'
+  | 'onDrag'
+  | 'onDragStart'
+  | 'onDragEnd'
+>
 export interface Props extends SVGProps {
   onChange: (checked: boolean) => void
   checked: boolean
