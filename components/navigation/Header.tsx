@@ -45,11 +45,16 @@ const Header = () => {
               return link.href !== '/'
             })
             .map((link) => {
-              const isSelected = pathname!.includes(link.href as string)
+              const segments = pathname?.split('/').filter(Boolean) ?? []
+              // segments[0] may be the locale ('pt'); strip it
+              const pathWithoutLocale = '/' + segments.filter((s) => s !== locale).join('/')
+              const isSelected =
+                pathWithoutLocale === link.href || pathWithoutLocale.startsWith(link.href + '/')
               return (
                 <Link
                   key={link.title}
                   href={`/${locale}${link.href}`}
+                  aria-current={isSelected ? 'page' : undefined}
                   className="flex transform-gpu items-center space-x-1 transition-transform duration-300"
                 >
                   <div
