@@ -12,6 +12,7 @@ import { maintitle, maindescription } from '@/data/localeMetadata'
 import { ThemeProvider } from '@/components/theme/ThemeContext'
 import { LocaleProvider } from '@/components/locale/LocaleProvider'
 import CustomCursor from '@/components/ui/CustomCursor'
+import MotionProvider from '@/components/animations/MotionProvider'
 import PageTransition from '@/components/animations/PageTransition'
 import JsonLd from '@/components/seo/JsonLd'
 import { Metadata, Viewport } from 'next'
@@ -120,21 +121,23 @@ export default async function RootLayout({
       <body className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-900 dark:text-white">
         <LocaleProvider initialLocale={locale}>
           <ThemeProvider>
-            <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
-            <CustomCursor />
-            <JsonLd type="website" locale={locale} />
-            <JsonLd type="person" locale={locale} />
-            <SectionContainer>
-              <div className="flex h-screen flex-col justify-between font-sans">
-                <SearchProvider>
-                  <Header />
-                  <main className="mb-auto">
-                    <PageTransition>{children}</PageTransition>
-                  </main>
-                </SearchProvider>
-                <Footer />
-              </div>
-            </SectionContainer>
+            <MotionProvider>
+              <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
+              <CustomCursor />
+              <JsonLd type="website" locale={locale} />
+              <JsonLd type="person" locale={locale} />
+              <SectionContainer>
+                <div className="flex h-screen flex-col justify-between font-sans">
+                  <SearchProvider>
+                    <Header />
+                    <main className="mb-auto">
+                      <PageTransition>{children}</PageTransition>
+                    </main>
+                  </SearchProvider>
+                  <Footer />
+                </div>
+              </SectionContainer>
+            </MotionProvider>
           </ThemeProvider>
         </LocaleProvider>
       </body>
