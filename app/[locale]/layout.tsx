@@ -32,7 +32,7 @@ const space_grotesk = Space_Grotesk({
 export async function generateMetadata({
   params,
 }: {
-  params: { locale: LocaleTypes }
+  params: Promise<{ locale: LocaleTypes }>
 }): Promise<Metadata> {
   const locale = (await params).locale
 
