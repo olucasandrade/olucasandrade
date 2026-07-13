@@ -8,6 +8,7 @@ export default function CustomCursor() {
   const [hovered, setHovered] = useState(false)
   const [suppressed, setSuppressed] = useState(false)
   const [windowVisible, setWindowVisible] = useState(true)
+  const [over3d, setOver3d] = useState(false)
 
   const springConfig = { damping: 40, stiffness: 800, mass: 0.2 }
   const cursorX = useSpring(0, springConfig)
@@ -37,6 +38,7 @@ export default function CustomCursor() {
 
       setHovered(Boolean(interactive))
       setSuppressed(Boolean(nativeCursorTarget))
+      setOver3d(Boolean(target.closest('[data-cursor="3d"]')))
     }
 
     const handleMouseLeave = () => setWindowVisible(false)
@@ -101,7 +103,12 @@ export default function CustomCursor() {
         animate={{
           width: hovered ? 48 : 32,
           height: hovered ? 48 : 32,
-          borderColor: hovered ? 'rgba(22, 163, 74, 0.8)' : 'rgba(22, 163, 74, 0.3)',
+          scale: over3d ? 1.2 : 1,
+          borderColor: over3d
+            ? 'rgba(74, 222, 128, 0.9)'
+            : hovered
+              ? 'rgba(22, 163, 74, 0.8)'
+              : 'rgba(22, 163, 74, 0.3)',
           opacity: dimmed ? 0 : 1,
         }}
         transition={{ duration: 0.2 }}
