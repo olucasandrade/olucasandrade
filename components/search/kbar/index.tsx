@@ -60,28 +60,28 @@ export const KBarSearchProvider: FC<{
       return actions
     }
     async function fetchData() {
-      if (searchDocumentsPath) {
-        const url =
-          searchDocumentsPath.indexOf('://') > 0 || searchDocumentsPath.indexOf('//') === 0
-            ? searchDocumentsPath
-            : new URL(searchDocumentsPath, window.location.origin)
-        const res = await fetch(url)
-        const json = await res.json()
-        const actions = onSearchDocumentsLoad ? onSearchDocumentsLoad(json) : mapPosts(json)
-        setSearchActions(actions)
+      if (!searchDocumentsPath) {
         setDataLoaded(true)
+        return
       }
-    }
-    if (!dataLoaded && searchDocumentsPath) {
-      fetchData()
-    } else {
+      const url =
+        searchDocumentsPath.indexOf('://') > 0 || searchDocumentsPath.indexOf('//') === 0
+          ? searchDocumentsPath
+          : new URL(searchDocumentsPath, window.location.origin)
+      const res = await fetch(url)
+      const json = await res.json()
+      const actions = onSearchDocumentsLoad ? onSearchDocumentsLoad(json) : mapPosts(json)
+      setSearchActions(actions)
       setDataLoaded(true)
     }
-  }, [defaultActions, dataLoaded, router, searchDocumentsPath, onSearchDocumentsLoad])
+    fetchData()
+    // Re-fetch/re-map whenever the locale-bound loader changes, so search
+    // results don't keep pointing at the previous language's paths.
+  }, [router, searchDocumentsPath, onSearchDocumentsLoad])
 
   return (
-    <KBarProvider actions={defaultActions}>
-      <KBarModal actions={searchActions} isLoading={!dataLoaded} />
+    <KBarProvider actions={[]}>
+      <KBarModal actions={searchActions} defaultActions={defaultActions} isLoading={!dataLoaded} />
       {children}
     </KBarProvider>
   )

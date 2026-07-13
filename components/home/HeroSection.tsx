@@ -10,21 +10,11 @@ import { useParams } from 'next/navigation'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import { useContactModal } from '@/components/formspree/store'
+import { fadeUp, staggerContainer, defaultTransition } from '@/lib/animations'
+import AfterIdle from '@/components/three/AfterIdle'
+import { LazyHeroScene } from '@/components/three/Lazy'
 
-const keywords = ['Typescript', 'Go', 'Rust', 'AWS', 'GraphQL']
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.08 },
-  },
-}
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.3, ease: [0.25, 0.1, 0.25, 1] } },
-}
+const keywords = ['TypeScript', 'Go', 'PostgreSQL', 'React', 'Python']
 
 export default function HeroSection() {
   const locale = useParams()?.locale as LocaleTypes
@@ -34,6 +24,7 @@ export default function HeroSection() {
 
   useEffect(() => {
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
       setCurrentKeyword((prev) => (prev + 1) % keywords.length)
     }, 2000)
     return () => clearInterval(interval)
@@ -41,12 +32,18 @@ export default function HeroSection() {
 
   return (
     <motion.section
-      variants={containerVariants}
+      variants={staggerContainer}
       initial="hidden"
       animate="visible"
-      className="flex flex-col items-center gap-8 pb-8 pt-6 md:flex-row md:gap-12 md:pb-12"
+      className="relative flex flex-col items-center gap-8 pb-8 pt-6 md:flex-row md:gap-12 md:pb-12"
     >
-      <motion.div variants={itemVariants} className="flex-shrink-0">
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <AfterIdle>
+          <LazyHeroScene />
+        </AfterIdle>
+      </div>
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-white via-white/70 to-transparent dark:from-gray-900 dark:via-gray-900/70" />
+      <motion.div variants={fadeUp} transition={defaultTransition} className="flex-shrink-0">
         <div className="relative h-32 w-32 md:h-40 md:w-40">
           <Image
             src="/static/images/avatar.png"
@@ -60,18 +57,22 @@ export default function HeroSection() {
 
       <div className="flex flex-col items-center text-center md:items-start md:text-left">
         <motion.h1
-          variants={itemVariants}
+          variants={fadeUp}
+          transition={defaultTransition}
           className="text-3xl font-extrabold tracking-tight text-gray-900 dark:text-gray-100 sm:text-4xl md:text-5xl"
         >
           Lucas Andrade
         </motion.h1>
 
         <motion.div
-          variants={itemVariants}
+          variants={fadeUp}
+          transition={defaultTransition}
           className="mt-3 flex items-center gap-2 text-lg text-gray-600 dark:text-gray-300 md:text-xl"
         >
           <span>{t('subtitle')}</span>
-          <span className="inline-block w-32 text-left">
+          <span className="relative inline-grid text-left">
+            {/* invisible sizer: longest keyword pins the width */}
+            <span className="invisible font-semibold [grid-area:1/1]">PostgreSQL</span>
             <AnimatePresence mode="wait">
               <motion.span
                 key={keywords[currentKeyword]}
@@ -79,7 +80,7 @@ export default function HeroSection() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.2 }}
-                className="inline-block font-semibold text-primary-500"
+                className="inline-block font-semibold text-primary-500 [grid-area:1/1]"
               >
                 {keywords[currentKeyword]}
               </motion.span>
@@ -88,13 +89,14 @@ export default function HeroSection() {
         </motion.div>
 
         <motion.p
-          variants={itemVariants}
+          variants={fadeUp}
+          transition={defaultTransition}
           className="mt-4 max-w-lg text-gray-500 dark:text-gray-400"
         >
           {t('description')}
         </motion.p>
 
-        <motion.div variants={itemVariants} className="mt-6 flex gap-4">
+        <motion.div variants={fadeUp} transition={defaultTransition} className="mt-6 flex gap-4">
           <Link
             href={`/${locale}/blog`}
             className="rounded-lg bg-primary-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-600"
@@ -109,7 +111,11 @@ export default function HeroSection() {
           </Link>
         </motion.div>
 
-        <motion.div variants={itemVariants} className="mt-6 flex items-center space-x-3">
+        <motion.div
+          variants={fadeUp}
+          transition={defaultTransition}
+          className="mt-6 flex items-center space-x-3"
+        >
           {siteMetadata.formspree ? (
             <button
               className="flex items-center focus:outline-none"

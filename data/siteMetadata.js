@@ -3,10 +3,11 @@ const siteMetadata = {
   title: 'Lucas Andrade Blog',
   author: 'Lucas Andrade',
   headerTitle: 'Lucas Andrade',
-  description: 'Senior Backend Engineer at SCALIS sharing insights about Python, Go, Node.js, AWS, and system design',
+  description:
+    'Fullstack Engineer at Percona sharing insights about Python, Go, React, PostgreSQL, and system design',
   language: 'en',
   theme: 'system', // system, dark or light
-  siteUrl: 'https://olucasandrade.dev',
+  siteUrl: 'https://olucasandrade.com',
   siteRepo: 'https://github.com/olucasandrade/olucasandrade',
   siteLogo: '/static/images/logo.png',
   socialBanner: '/static/images/twitter-card.png',
@@ -14,7 +15,6 @@ const siteMetadata = {
   email: 'contato@olucasandrade.com',
   github: 'https://github.com/olucasandrade',
   x: '',
-  twitter: 'https://x.com/olucasandrad',
   facebook: '',
   youtube: '',
   linkedin: 'https://www.linkedin.com/in/lucasandradesouza',

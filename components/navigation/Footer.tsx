@@ -56,9 +56,17 @@ export default function Footer() {
             <div>{` • `}</div>
             <Link href="/">{maintitle[locale]}</Link>
           </div>
-          <div className="mb-8 text-sm text-gray-500 dark:text-gray-400">
+          <div className="mb-4 text-sm text-gray-500 dark:text-gray-400">
             <Link href="https://github.com/PxlSyl/tailwind-nextjs-starter-blog-i18n">
               {t('theme')}
+            </Link>
+          </div>
+          <div className="mb-8">
+            <Link
+              href={`/${locale}/terminal`}
+              className="font-mono text-xs text-gray-400 hover:text-primary-500"
+            >
+              $ {t('terminalHint')} &rarr;
             </Link>
           </div>
         </div>

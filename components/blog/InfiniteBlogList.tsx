@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { formatDate } from 'pliny/utils/formatDate'
 import { CoreContent } from 'pliny/utils/contentlayer'
@@ -12,6 +12,7 @@ import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import Image from 'next/image'
 import BlogStatsDisplay from './BlogStatsDisplay'
 import { useBlogStats } from '@/hooks/useBlogStats'
+import { staggerContainer, fadeUp } from '@/lib/animations'
 // Using a simple SVG icon instead of Heroicons to avoid dependency
 const SearchIcon = () => (
   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -31,33 +32,16 @@ interface InfiniteBlogListProps {
 }
 
 const POSTS_PER_LOAD = 6
-const SEARCH_DEBOUNCE_MS = 300
-
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-    },
-  },
-}
-
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0 },
-}
 
 export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogListProps) {
   const { t } = useTranslation(locale, 'home')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [displayedPosts, setDisplayedPosts] = useState(POSTS_PER_LOAD)
-  const [isLoading, setIsLoading] = useState(false)
   const [showAllTags, setShowAllTags] = useState(false)
 
   // Fetch blog stats for all posts
-  const { stats: blogStats } = useBlogStats(locale)
+  const { stats: blogStats, isLoading: isBlogStatsLoading } = useBlogStats(locale)
 
   // Get all unique tags
   const allTags = useMemo(() => {
@@ -105,20 +89,28 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
   // Load more posts
   const loadMore = useCallback(() => {
-    if (isLoading || !hasMore) return
-
-    setIsLoading(true)
-    // Simulate loading delay for better UX
-    setTimeout(() => {
-      setDisplayedPosts((prev) => prev + POSTS_PER_LOAD)
-      setIsLoading(false)
-    }, 300)
-  }, [isLoading, hasMore])
+    if (!hasMore) return
+    setDisplayedPosts((prev) => prev + POSTS_PER_LOAD)
+  }, [hasMore])
 
   // Reset displayed posts when search or tags change
   useEffect(() => {
     setDisplayedPosts(POSTS_PER_LOAD)
   }, [searchTerm, selectedTags])
+
+  // Auto-load the next page ~400px before the sentinel scrolls into
+  // view; the Load More button below stays as a functional fallback.
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore) return
+    const observer = new IntersectionObserver(
+      (entries) => entries[0].isIntersecting && setDisplayedPosts((p) => p + POSTS_PER_LOAD),
+      { rootMargin: '400px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore])
 
   // Handle tag selection
   const toggleTag = useCallback((tag: string) => {
@@ -129,15 +121,6 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
     setSearchTerm('')
     setSelectedTags([])
   }, [])
-
-  // Debounced search handler
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      // Search logic is handled in the filteredPosts memo
-    }, SEARCH_DEBOUNCE_MS)
-
-    return () => clearTimeout(timer)
-  }, [searchTerm])
 
   return (
     <div className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -221,18 +204,18 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
       <div className="container py-12">
         <motion.div
-          variants={container}
+          variants={staggerContainer}
           initial="hidden"
-          animate="show"
+          animate="visible"
           className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"
         >
           {postsToShow.map((post) => {
-            const { slug, date, title, summary, tags } = post
+            const { slug, date, title, summary, tags, readingTime } = post
             return (
               <motion.article
                 key={slug}
-                variants={item}
-                className="group relative flex flex-col space-y-2 rounded-lg border border-gray-200 p-6 transition-all duration-200 hover:border-primary-500 hover:shadow-lg dark:border-gray-700"
+                variants={fadeUp}
+                className="group relative flex flex-col space-y-2 rounded-xl border border-gray-200/60 bg-white/80 p-6 backdrop-blur-sm transition-all duration-300 hover:border-primary-500/40 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80"
               >
                 <div className="space-y-3">
                   <div className="space-y-2">
@@ -256,6 +239,9 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                   <div className="flex items-center gap-4">
                     <time dateTime={date} className="text-sm text-gray-500 dark:text-gray-400">
                       {formatDate(date, locale)}
+                      {readingTime && (
+                        <> &middot; {Math.ceil((readingTime as { minutes: number }).minutes)} min</>
+                      )}
                     </time>
                   </div>
                   <Link
@@ -266,7 +252,11 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
                   </Link>
                 </div>
                 <div>
-                  <BlogStatsDisplay views={blogStats[`blog-stats:${slug}`]?.views || 0} size="sm" />
+                  <BlogStatsDisplay
+                    views={blogStats[`blog-stats:${slug}`]?.views || 0}
+                    isLoading={isBlogStatsLoading}
+                    size="sm"
+                  />
                 </div>
               </motion.article>
             )
@@ -282,22 +272,17 @@ export default function InfiniteBlogList({ posts, locale, title }: InfiniteBlogL
 
         {/* Load More Button */}
         {hasMore && (
-          <div className="mt-12 flex justify-center">
-            <button
-              onClick={loadMore}
-              disabled={isLoading}
-              className="rounded-lg bg-primary-500 px-6 py-3 font-medium text-white transition-colors duration-200 hover:bg-primary-600 disabled:cursor-not-allowed disabled:bg-primary-400"
-            >
-              {isLoading ? (
-                <div className="flex items-center space-x-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                  <span>{t('loading')}</span>
-                </div>
-              ) : (
-                t('more')
-              )}
-            </button>
-          </div>
+          <>
+            <div ref={sentinelRef} aria-hidden="true" />
+            <div className="mt-12 flex justify-center">
+              <button
+                onClick={loadMore}
+                className="rounded-lg bg-primary-500 px-6 py-3 font-medium text-white transition-colors duration-200 hover:bg-primary-600"
+              >
+                {t('more')}
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>

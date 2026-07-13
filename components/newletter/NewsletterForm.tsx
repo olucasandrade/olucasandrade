@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import { useParams } from 'next/navigation'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
@@ -17,6 +18,7 @@ const NewsletterForm = ({ apiUrl = '/api/newsletter' }: NewsletterFormProps) => 
   const [error, setError] = useState<boolean>(false)
   const [message, setMessage] = useState<string>('')
   const [subscribed, setSubscribed] = useState<boolean>(false)
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
 
   const subscribe = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -28,24 +30,38 @@ const NewsletterForm = ({ apiUrl = '/api/newsletter' }: NewsletterFormProps) => 
       return
     }
 
-    const res = await fetch(apiUrl, {
-      body: JSON.stringify({
-        email: emailValue,
-      }),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-    })
+    setError(false)
+    setIsSubmitting(true)
+    const toastId = toast.loading(t('buttonLoading'))
 
-    const { error } = await res.json()
-    if (error) {
+    try {
+      const res = await fetch(apiUrl, {
+        body: JSON.stringify({
+          email: emailValue,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      })
+
+      const { error } = await res.json()
+      if (error) {
+        setError(true)
+        setMessage(t('messageError'))
+        toast.error(t('messageError'), { id: toastId })
+      } else {
+        inputEl.current!.value = ''
+        setError(false)
+        setSubscribed(true)
+        toast.success(t('placeholderSuccess'), { id: toastId })
+      }
+    } catch {
       setError(true)
       setMessage(t('messageError'))
-    } else {
-      inputEl.current!.value = ''
-      setError(false)
-      setSubscribed(true)
+      toast.error(t('messageError'), { id: toastId })
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -67,18 +83,22 @@ const NewsletterForm = ({ apiUrl = '/api/newsletter' }: NewsletterFormProps) => 
               ref={inputEl}
               required
               type="email"
-              disabled={subscribed}
+              disabled={subscribed || isSubmitting}
             />
           </label>
         </div>
         <div className="mt-2 flex w-full rounded-md shadow-sm sm:ml-3 sm:mt-0">
           <button
-            className={`group relative inline-flex items-center justify-center overflow-hidden rounded-md bg-primary-500 px-4 py-1.5 text-xs font-normal text-white transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg hover:shadow-primary-500/30 dark:bg-primary-500 dark:hover:shadow-primary-400/30 ${subscribed ? 'cursor-default' : ''}`}
+            className={`group relative inline-flex items-center justify-center overflow-hidden rounded-md bg-primary-500 px-4 py-1.5 text-xs font-normal text-white transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg hover:shadow-primary-500/30 dark:bg-primary-500 dark:hover:shadow-primary-400/30 ${subscribed || isSubmitting ? 'cursor-default' : ''}`}
             type="submit"
-            disabled={subscribed}
+            disabled={subscribed || isSubmitting}
           >
             <span className="relative z-50 text-lg text-white">
-              {subscribed ? t('buttonSuccess') : t('buttonDefault')}
+              {subscribed
+                ? t('buttonSuccess')
+                : isSubmitting
+                  ? t('buttonLoading')
+                  : t('buttonDefault')}
             </span>
             <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-13deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-13deg)_translateX(100%)]">
               <div className="relative h-full w-8 bg-white/20" />
@@ -88,6 +108,11 @@ const NewsletterForm = ({ apiUrl = '/api/newsletter' }: NewsletterFormProps) => 
       </form>
       {error && (
         <div className="w-72 pt-2 text-sm text-red-500 dark:text-red-400 sm:w-96">{message}</div>
+      )}
+      {subscribed && !error && (
+        <div className="w-72 pt-2 text-sm text-primary-600 dark:text-primary-400 sm:w-96">
+          {t('placeholderSuccess')}
+        </div>
       )}
     </div>
   )

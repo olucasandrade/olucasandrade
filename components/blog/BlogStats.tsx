@@ -23,16 +23,18 @@ export default function BlogStats({
   const [stats, setStats] = useState<StatsData>({ views: 0 })
   const [isLoading, setIsLoading] = useState(true)
 
-  // Fetch initial stats and record view
+  // Fetch initial stats and record view (once per browser session per slug)
   useEffect(() => {
     const fetchStatsAndRecordView = async () => {
       try {
-        // First, record the view
-        await fetch(`/api/blog/${encodeURIComponent(slug)}/view`, {
-          method: 'POST',
-        })
+        const viewedKey = `viewed:${slug}`
+        if (!sessionStorage.getItem(viewedKey)) {
+          sessionStorage.setItem(viewedKey, '1')
+          await fetch(`/api/blog/${encodeURIComponent(slug)}/view`, {
+            method: 'POST',
+          })
+        }
 
-        // Then fetch the updated stats
         const response = await fetch(`/api/blog/${encodeURIComponent(slug)}/stats`)
         if (response.ok) {
           const data = await response.json()
@@ -46,7 +48,7 @@ export default function BlogStats({
     }
 
     fetchStatsAndRecordView()
-  }, [slug, locale])
+  }, [slug])
 
   if (isLoading) {
     return (

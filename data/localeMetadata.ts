@@ -3,11 +3,11 @@ type Metadata = {
 }
 
 export const maintitle: Metadata = {
-  en: 'Lucas Andrade - Senior Backend Engineer',
-  pt: 'Lucas Andrade - Engenheiro Backend Senior',
+  en: 'Lucas Andrade - Fullstack Engineer',
+  pt: 'Lucas Andrade - Engenheiro Fullstack',
 }
 
 export const maindescription: Metadata = {
-  en: 'Senior Backend Engineer at SCALIS. Sharing insights about Python, Go, Node.js, AWS, system design, and modern web development.',
-  pt: 'Engenheiro Backend Senior na SCALIS. Compartilhando conhecimentos sobre Python, Go, Node.js, AWS, system design e desenvolvimento web moderno.',
+  en: 'Fullstack Engineer at Percona. Sharing insights about Python, React, Golang, PostgreSQL, TypeScript, MongoDB, and modern web development.',
+  pt: 'Engenheiro Fullstack na Percona. Compartilhando conhecimentos sobre Python, React, Golang, PostgreSQL, TypeScript, MongoDB e desenvolvimento web moderno.',
 }

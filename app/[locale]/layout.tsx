@@ -12,9 +12,10 @@ import { maintitle, maindescription } from '@/data/localeMetadata'
 import { ThemeProvider } from '@/components/theme/ThemeContext'
 import { LocaleProvider } from '@/components/locale/LocaleProvider'
 import CustomCursor from '@/components/ui/CustomCursor'
+import MotionProvider from '@/components/animations/MotionProvider'
 import PageTransition from '@/components/animations/PageTransition'
 import JsonLd from '@/components/seo/JsonLd'
-import { Metadata } from 'next'
+import { Metadata, Viewport } from 'next'
 import { dir } from 'i18next'
 import { LocaleTypes, locales } from './i18n/settings'
 import TwSizeIndicator from '@/components/helper/TwSizeIndicator'
@@ -29,10 +30,17 @@ const space_grotesk = Space_Grotesk({
   variable: '--font-space-grotesk',
 })
 
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#fff' },
+    { media: '(prefers-color-scheme: dark)', color: '#000' },
+  ],
+}
+
 export async function generateMetadata({
   params,
 }: {
-  params: { locale: LocaleTypes }
+  params: Promise<{ locale: LocaleTypes }>
 }): Promise<Metadata> {
   const locale = (await params).locale
 
@@ -57,11 +65,22 @@ export async function generateMetadata({
       languages: {
         en: `${siteMetadata.siteUrl}/`,
         pt: `${siteMetadata.siteUrl}/pt`,
+        'x-default': siteMetadata.siteUrl,
       },
       types: {
         'application/rss+xml': `${siteMetadata.siteUrl}/feed.xml`,
       },
     },
+    icons: {
+      icon: [
+        { url: '/static/favicons/favicon.ico' },
+        { url: '/static/favicons/favicon.png', type: 'image/png' },
+      ],
+      other: [
+        { rel: 'mask-icon', url: '/static/favicons/safari-pinned-tab.svg', color: '#16a34a' },
+      ],
+    },
+    manifest: '/static/favicons/site.webmanifest',
     robots: {
       index: true,
       follow: true,
@@ -100,32 +119,32 @@ export default async function RootLayout({
       className={`${space_grotesk.variable} scroll-smooth`}
       suppressHydrationWarning
     >
-      <link rel="icon" href="/static/favicons/favicon.ico" />
-      <link rel="icon" type="image/png" href="/static/favicons/favicon.png" />
-      <link rel="manifest" href="/static/favicons/site.webmanifest" />
-      <link rel="mask-icon" href="/static/favicons/safari-pinned-tab.svg" color="#16a34a" />
-      <meta name="msapplication-TileColor" content="#000000" />
-      <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff" />
-      <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#000" />
-      <link rel="alternate" type="application/rss+xml" href="/feed.xml" />
       <body className="bg-white pl-[calc(100vw-100%)] text-black antialiased dark:bg-gray-900 dark:text-white">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-primary-500 focus:px-3 focus:py-2 focus:text-white"
+        >
+          Skip to content
+        </a>
         <LocaleProvider initialLocale={locale}>
           <ThemeProvider>
-            <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
-            <CustomCursor />
-            <JsonLd type="website" locale={locale} />
-            <JsonLd type="person" locale={locale} />
-            <SectionContainer>
-              <div className="flex h-screen flex-col justify-between font-sans">
-                <SearchProvider>
-                  <Header />
-                  <main className="mb-auto">
-                    <PageTransition>{children}</PageTransition>
-                  </main>
-                </SearchProvider>
-                <Footer />
-              </div>
-            </SectionContainer>
+            <MotionProvider>
+              <Analytics analyticsConfig={siteMetadata.analytics as AnalyticsConfig} />
+              <CustomCursor />
+              <JsonLd type="website" locale={locale} />
+              <JsonLd type="person" locale={locale} />
+              <SectionContainer>
+                <div className="flex min-h-screen flex-col justify-between font-sans">
+                  <SearchProvider>
+                    <Header />
+                    <main id="main-content" className="mb-auto">
+                      <PageTransition>{children}</PageTransition>
+                    </main>
+                  </SearchProvider>
+                  <Footer />
+                </div>
+              </SectionContainer>
+            </MotionProvider>
           </ThemeProvider>
         </LocaleProvider>
       </body>

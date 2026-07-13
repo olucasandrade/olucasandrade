@@ -7,13 +7,13 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 // You might need to insert additional domains in script-src if you are using external services
 const ContentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-eval' 'unsafe-inline' giscus.app analytics.umami.is statichunt.com http://www.youtube.com;
+  script-src 'self' 'unsafe-eval' 'unsafe-inline' giscus.app;
   style-src 'self' 'unsafe-inline';
-  img-src * blob: data: statichunt.com;
+  img-src 'self' blob: data: https://i.ytimg.com https://avatars.githubusercontent.com;
   media-src 'self' *.s3.amazonaws.com;
-  connect-src * statichunt.com;
+  connect-src 'self' https://formspree.io https://api.buttondown.email;
   font-src 'self';
-  frame-src giscus.app https://www.youtube.com/ https://www.youtube-nocookie.com/
+  frame-src giscus.app https://www.youtube-nocookie.com;
 `
 
 const securityHeaders = [
@@ -64,7 +64,7 @@ module.exports = () => {
       remotePatterns: [
         {
           protocol: 'https',
-          hostname: 'picsum.photos',
+          hostname: 'i.ytimg.com',
           pathname: '**',
         },
       ],

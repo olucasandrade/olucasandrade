@@ -5,5 +5,6 @@
   "placeholderSuccess": "Você está inscrito! 🎉",
   "placeholderDefault": "Digite seu endereço de email",
   "buttonSuccess": "Obrigado!",
-  "buttonDefault": "Inscrever-se"
+  "buttonDefault": "Inscrever-se",
+  "buttonLoading": "Enviando…"
 }

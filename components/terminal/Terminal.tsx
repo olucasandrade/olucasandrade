@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent } from 'react'
 import { useParams } from 'next/navigation'
+import { motion } from 'framer-motion'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
+import { springTransition } from '@/lib/animations'
 import { executeCommand } from './commands/portfolio'
 import { SnakeState, initSnake, changeDirection, tick, renderGrid } from './commands/snake'
 import {
@@ -27,8 +29,8 @@ export default function Terminal() {
       type: 'output',
       content:
         locale === 'pt'
-          ? 'Bem-vindo ao terminal de Lucas Andrade!\nDigite "help" para ver os comandos disponíveis.'
-          : 'Welcome to Lucas Andrade\'s terminal!\nType "help" to see available commands.',
+          ? 'Bem-vindo ao terminal de Lucas Andrade!\nDigite "help" para ver os comandos disponíveis.\n\nExperimente: help · projects · snake'
+          : 'Welcome to Lucas Andrade\'s terminal!\nType "help" to see available commands.\n\nTry: help · projects · snake',
     },
   ])
   const [input, setInput] = useState('')
@@ -310,58 +312,68 @@ export default function Terminal() {
   }
 
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-    <div
-      className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-gray-700 bg-gray-950 shadow-2xl"
-      onClick={handleTerminalClick}
-    >
-      {/* Title bar */}
-      <div className="flex items-center gap-2 border-b border-gray-700 bg-gray-900 px-4 py-2.5">
-        <div className="h-3 w-3 rounded-full bg-red-500" />
-        <div className="h-3 w-3 rounded-full bg-yellow-500" />
-        <div className="h-3 w-3 rounded-full bg-green-500" />
-        <span className="ml-2 text-sm text-gray-400">lucas@portfolio ~ %</span>
-      </div>
-
-      {/* Terminal content */}
-      <div
-        ref={terminalRef}
-        className="h-[400px] overflow-y-auto p-4 font-mono text-sm md:h-[500px]"
+    <div className="mx-auto max-w-3xl" style={{ perspective: 1000 }}>
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+      <motion.div
+        className="overflow-hidden rounded-xl border border-gray-700 bg-gray-950 shadow-2xl"
+        onClick={handleTerminalClick}
+        initial={{ rotateX: 2 }}
+        whileHover={{ rotateX: 0 }}
+        transition={springTransition}
       >
-        {/* Scanline effect */}
-        <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(0,255,0,0.03)_0px,rgba(0,255,0,0.03)_1px,transparent_1px,transparent_2px)]" />
+        {/* Title bar */}
+        <div className="flex items-center gap-2 border-b border-gray-700 bg-gray-900 px-4 py-2.5">
+          <div className="h-3 w-3 rounded-full bg-red-500" />
+          <div className="h-3 w-3 rounded-full bg-yellow-500" />
+          <div className="h-3 w-3 rounded-full bg-green-500" />
+          <span className="ml-2 text-sm text-gray-400">lucas@portfolio ~ %</span>
+        </div>
 
-        {lines.map((line, i) => (
-          <div key={i} className="mb-1">
-            {line.type === 'input' ? (
-              <div className="text-green-400">
-                <span className="text-primary-500">$ </span>
-                {line.content}
-              </div>
-            ) : (
-              <pre className="whitespace-pre-wrap text-gray-300">{line.content}</pre>
-            )}
-          </div>
-        ))}
+        {/* Terminal content */}
+        <div
+          ref={terminalRef}
+          className="relative h-[400px] overflow-y-auto p-4 font-mono text-sm md:h-[500px]"
+        >
+          {/* Scanline effect */}
+          <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(0,255,0,0.03)_0px,rgba(0,255,0,0.03)_1px,transparent_1px,transparent_2px)]" />
 
-        {/* Input line */}
-        {gameMode !== 'snake' && (
-          <div className="flex items-center text-green-400">
-            <span className="text-primary-500">$ </span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="ml-1 flex-1 border-none bg-transparent font-mono text-sm text-green-400 caret-green-400 outline-none"
-              spellCheck={false}
-              autoComplete="off"
-            />
-            <span className="animate-pulse text-green-400">_</span>
-          </div>
-        )}
-      </div>
+          {lines.map((line, i) => (
+            <div key={i} className="mb-1">
+              {line.type === 'input' ? (
+                <div className="text-green-400">
+                  <span className="text-primary-500">$ </span>
+                  {line.content}
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap text-gray-300">{line.content}</pre>
+              )}
+            </div>
+          ))}
+
+          {/* Input line */}
+          {gameMode !== 'snake' && (
+            <div className="flex items-center text-green-400">
+              <span className="text-primary-500">$ </span>
+              <input
+                ref={inputRef}
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="ml-1 flex-1 border-none bg-transparent font-mono text-sm text-green-400 caret-green-400 outline-none"
+                spellCheck={false}
+                autoComplete="off"
+                // eslint-disable-next-line jsx-a11y/no-autofocus -- single-purpose command prompt; auto-focus is expected and surfaces the mobile keyboard on load
+                autoFocus
+                inputMode="text"
+                autoCapitalize="none"
+                autoCorrect="off"
+              />
+              <span className="animate-pulse text-green-400">_</span>
+            </div>
+          )}
+        </div>
+      </motion.div>
     </div>
   )
 }

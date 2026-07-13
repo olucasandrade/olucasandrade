@@ -14,9 +14,17 @@ type ExperienceData = {
 const experienceData: ExperienceData = {
   en: [
     {
+      company: 'Percona',
+      role: 'Fullstack Engineer - Global Services',
+      period: 'Jul 2026 - Present',
+      description:
+        'Building global, impactful products that support our mission of creating a great open-source observability environment',
+      technologies: ['Python', 'React', 'Golang', 'PostgreSQL', 'TypeScript', 'MongoDB'],
+    },
+    {
       company: 'SCALIS',
       role: 'Senior Backend Engineer',
-      period: 'Dec 2025 - Present',
+      period: 'Dec 2025 - Jul 2026',
       description:
         'Building scalable backend systems with Node.js and GraphQL. Designing and implementing data models with Prisma and PostgreSQL, focusing on performance and reliability.',
       technologies: ['Node.js', 'GraphQL', 'Prisma', 'PostgreSQL', 'TypeScript'],
@@ -24,7 +32,7 @@ const experienceData: ExperienceData = {
     {
       company: 'Tripleten',
       role: 'Web Instructor',
-      period: 'Sep 2025 - Present',
+      period: 'Sep 2025 - Apr 2026',
       description:
         'Teaching web development fundamentals and modern frameworks. Mentoring students through React, Node.js, and full-stack project development.',
       technologies: ['React', 'Node.js', 'JavaScript', 'Web Development'],
@@ -64,9 +72,17 @@ const experienceData: ExperienceData = {
   ],
   pt: [
     {
+      company: 'Percona',
+      role: 'Engenheiro Fullstack - Global Services',
+      period: 'Jul 2026 - Presente',
+      description:
+        'Construindo produtos globais, impactantes que ajudam nossa missão de construir um ambiente de observabilidade incrível (e open source)!',
+      technologies: ['Python', 'React', 'Golang', 'PostgreSQL', 'TypeScript', 'MongoDB'],
+    },
+    {
       company: 'SCALIS',
-      role: 'Engenheiro Backend Senior',
-      period: 'Dez 2025 - Presente',
+      role: 'Engenheiro Backend Sênior',
+      period: 'Dez 2025 - Jul 2026',
       description:
         'Construindo sistemas backend escaláveis com Node.js e GraphQL. Projetando e implementando modelos de dados com Prisma e PostgreSQL, focando em performance e confiabilidade.',
       technologies: ['Node.js', 'GraphQL', 'Prisma', 'PostgreSQL', 'TypeScript'],
@@ -74,7 +90,7 @@ const experienceData: ExperienceData = {
     {
       company: 'Tripleten',
       role: 'Instrutor de Desenvolvimento Web',
-      period: 'Set 2025 - Presente',
+      period: 'Set 2025 - Abr 2026',
       description:
         'Ensinando fundamentos de desenvolvimento web e frameworks modernos. Mentorando alunos em React, Node.js e projetos full-stack.',
       technologies: ['React', 'Node.js', 'JavaScript', 'Desenvolvimento Web'],

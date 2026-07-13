@@ -13,6 +13,7 @@ import tagData from 'app/[locale]/tag-data.json'
 import { POSTS_PER_PAGE } from '@/data/postsPerPage'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
+import { staggerContainer, slideInLeft } from '@/lib/animations'
 
 interface PaginationProps {
   totalPages: number
@@ -26,21 +27,6 @@ interface ListLayoutProps {
   title: string
   initialDisplayPosts?: CoreContent<Blog>[]
   pagination?: PaginationProps
-}
-
-const container = {
-  hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.2,
-    },
-  },
-}
-
-const item = {
-  hidden: { opacity: 0, x: -25, y: 0 },
-  show: { opacity: 1, x: 0, y: 0 },
 }
 
 export default function ListLayoutWithTags({ params: { locale }, posts, title }: ListLayoutProps) {
@@ -109,7 +95,7 @@ export default function ListLayoutWithTags({ params: { locale }, posts, title }:
             <div className="px-6 py-4">
               <button
                 onClick={() => setSelectedTag('')}
-                className={`${useTagStore.getState().selectedTag === '' ? 'text-heading-500 dark:text-heading-400' : 'text-gray-500 dark:text-gray-400'} font-bold uppercase`}
+                className={`${useTagStore.getState().selectedTag === '' ? 'text-heading-100 dark:text-heading-400' : 'text-gray-500 dark:text-gray-400'} font-bold uppercase`}
               >
                 {t('all')}
               </button>
@@ -117,12 +103,12 @@ export default function ListLayoutWithTags({ params: { locale }, posts, title }:
             </div>
           </div>
           <div>
-            <motion.ul variants={container} initial="hidden" animate="show">
+            <motion.ul variants={staggerContainer} initial="hidden" animate="visible">
               {displayPosts.map((post) => {
                 const { slug, date, title, summary, tags, language } = post
                 if (language === locale) {
                   return (
-                    <motion.li variants={item} key={slug} className="py-5">
+                    <motion.li variants={slideInLeft} key={slug} className="py-5">
                       <article className="flex flex-col space-y-2 xl:space-y-0">
                         <dl>
                           <dt className="sr-only">{t('pub')}</dt>
@@ -148,7 +134,7 @@ export default function ListLayoutWithTags({ params: { locale }, posts, title }:
                                     onClick={() => handleTagClick(t)}
                                     className={`${
                                       useTagStore.getState().selectedTag === t
-                                        ? 'text-heading-500 dark:text-heading-400'
+                                        ? 'text-heading-100 dark:text-heading-400'
                                         : 'text-primary-500 hover:text-primary-600 dark:text-primary-400 dark:hover:text-primary-500'
                                     } mr-3 text-sm font-medium uppercase`}
                                     aria-label={`View posts tagged ${t}`}

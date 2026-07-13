@@ -4,6 +4,8 @@ import Button from './Button'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import { useParams } from 'next/navigation'
 import { LocaleTypes } from 'app/[locale]/i18n/settings'
+import AfterIdle from '@/components/three/AfterIdle'
+import { LazyLostPacketScene } from '@/components/three/Lazy'
 export default function NotFoundclient() {
   const locale = useParams()?.locale as LocaleTypes
   const { t } = useTranslation(locale, 'notfound')
@@ -15,9 +17,18 @@ export default function NotFoundclient() {
         </h1>
       </div>
       <div className="max-w-md">
+        {/* 3D slot: dropped-packet scene, see docs/plans/03-3d-animations.md */}
+        <div className="pointer-events-none -mx-4 -mt-4 mb-2 h-64">
+          <AfterIdle>
+            <LazyLostPacketScene />
+          </AfterIdle>
+        </div>
         <p className="mb-4 text-xl font-bold leading-normal md:text-2xl">{t('title')}</p>
         <p className="mb-8">{t('description')}</p>
-        <Button href={`/${locale}`} text={t('back')} />
+        <div className="flex flex-wrap gap-3">
+          <Button href={`/${locale}`} text={t('back')} />
+          <Button href={`/${locale}/blog`} text={t('blog')} />
+        </div>
       </div>
     </div>
   )

@@ -2,6 +2,7 @@ import { useRef, useCallback } from 'react'
 import { useOuterClick } from '../util/useOuterClick'
 import { motion } from 'framer-motion'
 import { MailIcon } from '../search/icons'
+import { fadeUp, defaultTransition } from '@/lib/animations'
 
 interface cModalProps {
   isOpen?: boolean
@@ -10,11 +11,6 @@ interface cModalProps {
   body?: React.ReactElement
   footer?: React.ReactElement
   disabled?: boolean
-}
-
-const variants = {
-  hidden: { opacity: 0, x: 0, y: -25 },
-  enter: { opacity: 1, x: 0, y: 0 },
 }
 
 export const CModal: React.FC<cModalProps> = ({
@@ -42,10 +38,10 @@ export const CModal: React.FC<cModalProps> = ({
 
   return (
     <motion.div
-      variants={variants}
+      variants={fadeUp}
       initial="hidden"
-      animate="enter"
-      transition={{ type: 'linear' }}
+      animate="visible"
+      transition={defaultTransition}
       className="fixed inset-0 z-50 flex items-center justify-center bg-gray-300/50 p-4 backdrop-blur backdrop-filter dark:bg-black/50"
     >
       <div className="relative mx-auto my-3 h-full w-full sm:h-auto sm:w-2/5 sm:max-w-xl">
@@ -54,7 +50,7 @@ export const CModal: React.FC<cModalProps> = ({
           className="relative flex h-full w-full flex-col rounded-lg border-0 bg-white shadow-lg outline-none focus:outline-none dark:bg-black lg:h-auto"
         >
           <div className="flex items-center justify-between p-6">
-            <div className="ml-2 flex flex-row items-center text-3xl font-semibold text-heading-400">
+            <div className="ml-2 flex flex-row items-center text-3xl font-semibold text-heading-50 dark:text-heading-400">
               <span>
                 <MailIcon className="mr-2 h-6 w-6" />
               </span>

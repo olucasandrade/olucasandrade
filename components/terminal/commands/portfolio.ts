@@ -35,7 +35,7 @@ const helpText: Record<Locale, string> = {
 const aboutText: Record<Locale, string> = {
   en: `
 > Lucas Andrade
-> Senior Backend Engineer @ SCALIS
+> Fullstack Engineer @ Percona
 > Web Instructor @ Tripleten
 
 5+ years building scalable backend systems.
@@ -46,7 +46,7 @@ Based in Brazil. Working globally.
 Languages: Python, Go, Node.js, TypeScript`,
   pt: `
 > Lucas Andrade
-> Engenheiro Backend Senior @ SCALIS
+> Engenheiro Fullstack @ Percona
 > Instrutor Web @ Tripleten
 
 5+ anos construindo sistemas backend escaláveis.
@@ -79,14 +79,12 @@ const contactText: Record<Locale, string> = {
 Email:    contato@olucasandrade.com
 GitHub:   github.com/olucasandrade
 LinkedIn: linkedin.com/in/lucasandradesouza
-Twitter:  x.com/olucasandrad
-Website:  olucasandrade.dev`,
+Website:  olucasandrade.com`,
   pt: `
 Email:    contato@olucasandrade.com
 GitHub:   github.com/olucasandrade
 LinkedIn: linkedin.com/in/lucasandradesouza
-Twitter:  x.com/olucasandrad
-Website:  olucasandrade.dev`,
+Website:  olucasandrade.com`,
 }
 
 function getExperienceText(locale: Locale): string {
@@ -135,8 +133,8 @@ export function executeCommand(
       return {
         output:
           locale === 'pt'
-            ? '> Abrindo currículo... Acesse olucasandrade.dev/about para ver mais!'
-            : '> Opening resume... Visit olucasandrade.dev/about to learn more!',
+            ? '> Abrindo currículo... Acesse olucasandrade.com/about para ver mais!'
+            : '> Opening resume... Visit olucasandrade.com/about to learn more!',
       }
     case 'play snake':
       return { output: '', special: 'snake' }

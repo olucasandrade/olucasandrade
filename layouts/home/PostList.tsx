@@ -8,6 +8,7 @@ import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import Image from 'next/image'
 import { motion } from 'framer-motion'
 import { useTranslation } from 'app/[locale]/i18n/client'
+import { fadeUp } from '@/lib/animations'
 
 interface Post {
   slug: string
@@ -23,11 +24,6 @@ interface PostListProps {
   posts: Post[]
   locale: LocaleTypes
   maxDisplay: number
-}
-
-const cardVariants = {
-  hidden: { opacity: 0, y: 12 },
-  visible: { opacity: 1, y: 0 },
 }
 
 const PostList: React.FC<PostListProps> = ({ posts, locale, maxDisplay }) => {
@@ -49,7 +45,7 @@ const PostList: React.FC<PostListProps> = ({ posts, locale, maxDisplay }) => {
         return (
           <motion.li
             key={slug}
-            variants={cardVariants}
+            variants={fadeUp}
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, margin: '-60px' }}
