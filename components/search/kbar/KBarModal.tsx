@@ -18,16 +18,18 @@ import { LocaleTypes, locales } from 'app/[locale]/i18n/settings'
 
 interface KBarModalProps {
   actions: any
+  defaultActions: any
   isLoading: boolean
 }
 
-export const KBarModal: React.FC<KBarModalProps> = ({ actions, isLoading }) => {
+export const KBarModal: React.FC<KBarModalProps> = ({ actions, defaultActions, isLoading }) => {
   const { locale } = useLocale()
   const { t } = useLocaleTranslation('common')
   const pathname = usePathname()
   const router = useRouter()
   const setSelectedTag = useTagStore((state) => state.setSelectedTag)
 
+  useRegisterActions(defaultActions, [defaultActions])
   useRegisterActions(actions, [actions])
 
   const {

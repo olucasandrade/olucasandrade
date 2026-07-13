@@ -134,7 +134,7 @@ export default async function RootLayout({
               <JsonLd type="website" locale={locale} />
               <JsonLd type="person" locale={locale} />
               <SectionContainer>
-                <div className="flex h-screen flex-col justify-between font-sans">
+                <div className="flex min-h-screen flex-col justify-between font-sans">
                   <SearchProvider>
                     <Header />
                     <main id="main-content" className="mb-auto">

@@ -1,6 +1,7 @@
 'use client'
 
 import { SVGProps, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import Link from '../mdxcomponents/Link'
 import siteMetadata from '@/data/siteMetadata'
@@ -42,11 +43,13 @@ const MobileNav = () => {
 
   const [navShow, setNavShow] = useState<boolean>(false)
   const [accordionOpen, setAccordionOpen] = useState<boolean>(false)
+  const [mounted, setMounted] = useState<boolean>(false)
 
   // Guard against a scroll-locked page: if this component unmounts while
   // the menu is open (e.g. a link navigation swaps out the layout before
   // onToggleNav's state update commits), restore body scroll on cleanup.
   useEffect(() => {
+    setMounted(true)
     return () => {
       document.body.style.overflow = 'auto'
     }
@@ -83,111 +86,115 @@ const MobileNav = () => {
           />
         </svg>
       </button>
-      <div
-        className={`fixed left-0 top-0 z-50 my-auto h-full w-full transform overflow-y-auto bg-white opacity-95 duration-300 ease-in-out dark:bg-gray-950 dark:opacity-[0.98] ${
-          navShow ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <div className="flex justify-end">
-          <button className="mr-8 mt-11 h-8 w-8" aria-label="Toggle Menu" onClick={onToggleNav}>
-            <svg
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              className="text-gray-900 dark:text-gray-100"
-            >
-              <path
-                fillRule="evenodd"
-                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
-        </div>
-        <nav className="fixed mt-8 h-full">
-          {visibleLinks.map((link) => (
-            <div key={link.title} className="px-12 py-4">
-              <Link
-                href={`/${locale}${link.href}`}
-                className="text-2xl font-bold tracking-widest text-gray-900 dark:text-gray-100"
-                onClick={onToggleNav}
-              >
-                {t(`${link.title.toLowerCase()}`)}
-              </Link>
-            </div>
-          ))}
-          {siteMetadata.multiauthors && (
-            <>
-              <button
-                type="button"
-                className="flex w-full items-center justify-between px-12 py-4 text-2xl font-bold tracking-widest text-gray-900 dark:text-gray-100"
-                onClick={toggleAccordion}
-              >
-                <div>{t('about')}:</div>
-                <motion.div
-                  animate={{ rotate: accordionOpen ? 180 : 0 }}
-                  transition={{ duration: 0.3 }}
+      {mounted &&
+        createPortal(
+          <div
+            className={`fixed left-0 top-0 z-50 my-auto h-full w-full transform overflow-y-auto bg-white opacity-95 duration-300 ease-in-out dark:bg-gray-950 dark:opacity-[0.98] ${
+              navShow ? 'translate-x-0' : 'translate-x-full'
+            }`}
+          >
+            <div className="flex justify-end">
+              <button className="mr-8 mt-11 h-8 w-8" aria-label="Toggle Menu" onClick={onToggleNav}>
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="text-gray-900 dark:text-gray-100"
                 >
-                  <ChevronDownIcon
-                    className={`h-5 w-5 ${accordionOpen ? 'text-primary-500' : ''}`}
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
                   />
-                </motion.div>
+                </svg>
               </button>
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: accordionOpen ? 'auto' : 0, opacity: accordionOpen ? 1 : 0 }}
-                transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
-                className="overflow-hidden"
-              >
-                {authors.map((author) => {
-                  const { name, avatar, language, slug } = author
-                  if (language === locale) {
-                    return (
-                      <button
-                        key={name}
-                        className="group flex w-full items-center rounded-md px-12 py-4 text-sm"
-                      >
-                        <div className="mr-2">
-                          <Image
-                            className="h-auto w-auto rounded-full"
-                            src={avatar ?? ''}
-                            title="avatar"
-                            alt="avatar"
-                            width={25}
-                            height={25}
-                          />
-                        </div>
-                        <Link
-                          href={`/${locale}/about/${slug}`}
-                          onClick={onToggleNav}
-                          className="text-xl font-bold tracking-widest text-gray-900 dark:text-gray-100"
-                        >
-                          {name}
-                        </Link>
-                      </button>
-                    )
-                  }
-                  return null
-                })}
-              </motion.div>
-            </>
-          )}
-          {siteMetadata.multiauthors === false && (
-            <div className="px-12 py-4 text-2xl font-bold tracking-widest text-gray-900 dark:text-gray-100">
-              {mainAuthor.map((author) => {
-                const { name, language, slug } = author
-                if (language === locale) {
-                  return (
-                    <Link href={`/${locale}/about/${slug}`} onClick={onToggleNav} key={name}>
-                      {t('about')}
-                    </Link>
-                  )
-                }
-                return null
-              })}
             </div>
-          )}
-        </nav>
-      </div>
+            <nav className="fixed mt-8 h-full">
+              {visibleLinks.map((link) => (
+                <div key={link.title} className="px-12 py-4">
+                  <Link
+                    href={`/${locale}${link.href}`}
+                    className="text-2xl font-bold tracking-widest text-gray-900 dark:text-gray-100"
+                    onClick={onToggleNav}
+                  >
+                    {t(`${link.title.toLowerCase()}`)}
+                  </Link>
+                </div>
+              ))}
+              {siteMetadata.multiauthors && (
+                <>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between px-12 py-4 text-2xl font-bold tracking-widest text-gray-900 dark:text-gray-100"
+                    onClick={toggleAccordion}
+                  >
+                    <div>{t('about')}:</div>
+                    <motion.div
+                      animate={{ rotate: accordionOpen ? 180 : 0 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <ChevronDownIcon
+                        className={`h-5 w-5 ${accordionOpen ? 'text-primary-500' : ''}`}
+                      />
+                    </motion.div>
+                  </button>
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: accordionOpen ? 'auto' : 0, opacity: accordionOpen ? 1 : 0 }}
+                    transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                    className="overflow-hidden"
+                  >
+                    {authors.map((author) => {
+                      const { name, avatar, language, slug } = author
+                      if (language === locale) {
+                        return (
+                          <button
+                            key={name}
+                            className="group flex w-full items-center rounded-md px-12 py-4 text-sm"
+                          >
+                            <div className="mr-2">
+                              <Image
+                                className="h-auto w-auto rounded-full"
+                                src={avatar ?? ''}
+                                title="avatar"
+                                alt="avatar"
+                                width={25}
+                                height={25}
+                              />
+                            </div>
+                            <Link
+                              href={`/${locale}/about/${slug}`}
+                              onClick={onToggleNav}
+                              className="text-xl font-bold tracking-widest text-gray-900 dark:text-gray-100"
+                            >
+                              {name}
+                            </Link>
+                          </button>
+                        )
+                      }
+                      return null
+                    })}
+                  </motion.div>
+                </>
+              )}
+              {siteMetadata.multiauthors === false && (
+                <div className="px-12 py-4 text-2xl font-bold tracking-widest text-gray-900 dark:text-gray-100">
+                  {mainAuthor.map((author) => {
+                    const { name, language, slug } = author
+                    if (language === locale) {
+                      return (
+                        <Link href={`/${locale}/about/${slug}`} onClick={onToggleNav} key={name}>
+                          {t('about')}
+                        </Link>
+                      )
+                    }
+                    return null
+                  })}
+                </div>
+              )}
+            </nav>
+          </div>,
+          document.body
+        )}
     </>
   )
 }
