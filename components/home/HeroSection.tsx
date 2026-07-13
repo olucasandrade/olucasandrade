@@ -11,7 +11,6 @@ import { LocaleTypes } from 'app/[locale]/i18n/settings'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import { useContactModal } from '@/components/formspree/store'
 import { fadeUp, staggerContainer, defaultTransition } from '@/lib/animations'
-import AfterIdle from '@/components/three/AfterIdle'
 import { LazyHeroScene } from '@/components/three/Lazy'
 
 const keywords = ['TypeScript', 'Go', 'PostgreSQL', 'React', 'Python']
@@ -38,9 +37,7 @@ export default function HeroSection() {
       className="relative flex flex-col items-center gap-8 pb-8 pt-6 md:flex-row md:gap-12 md:pb-12"
     >
       <div className="pointer-events-none absolute inset-0 -z-10">
-        <AfterIdle>
-          <LazyHeroScene />
-        </AfterIdle>
+        <LazyHeroScene />
       </div>
       <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-white via-white/70 to-transparent dark:from-gray-900 dark:via-gray-900/70" />
       <motion.div variants={fadeUp} transition={defaultTransition} className="flex-shrink-0">
