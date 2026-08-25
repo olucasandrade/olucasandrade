@@ -2,9 +2,11 @@ import { Metadata } from 'next'
 import { genPageMetadata } from 'app/[locale]/seo'
 import { createTranslation } from '../i18n/server'
 import { LocaleTypes } from '../i18n/settings'
-import videosData from '@/data/videosData'
+import { allVideos } from 'contentlayer/generated'
 import VideoGrid from '@/components/videos/VideoGrid'
 import VideoJsonLd from '@/components/videos/VideoJsonLd'
+
+const isProduction = process.env.NODE_ENV === 'production'
 
 interface PageProps {
   params: Promise<{ locale: LocaleTypes }>
@@ -19,7 +21,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function Videos({ params }: PageProps) {
   const { locale } = await params
   const { t } = await createTranslation(locale, 'videos')
-  const videos = [...videosData].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+  const videos = allVideos
+    .filter((v) => !isProduction || !v.draft)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
   return (
     <div className="divide-y divide-gray-200 dark:divide-gray-700">

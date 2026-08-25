@@ -1,7 +1,6 @@
 import { MetadataRoute } from 'next'
-import { allBlogs, allAuthors } from 'contentlayer/generated'
+import { allBlogs, allAuthors, allProjects, allVideos } from 'contentlayer/generated'
 import siteMetadata from '@/data/siteMetadata'
-import videosData from '@/data/videosData'
 import { fallbackLng, secondLng } from './i18n/locales'
 
 // Default locale (en) lives at the root path; middleware redirects /en/* to /*.
@@ -29,13 +28,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.5,
   }))
 
+  const projectRoutes = allProjects
+    .filter((project) => !project.draft)
+    .map((project) => ({
+      url: localePath(project.language, `/projects/${project.slug}`),
+      lastModified: today,
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
+    }))
+
   const staticRoutes = [
     '',
     '/blog',
     '/projects',
-    // Hidden while empty: only listed once the first video is published
-    // (see data/videosData.ts).
-    ...(videosData.length > 0 ? ['/videos'] : []),
+    // Hidden while empty: only listed once the first video is published.
+    ...(allVideos.length > 0 ? ['/videos'] : []),
     '/experience',
     '/terminal',
   ].flatMap((route) =>
@@ -47,5 +54,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     }))
   )
 
-  return [...staticRoutes, ...blogRoutes, ...authorRoutes]
+  return [...staticRoutes, ...blogRoutes, ...authorRoutes, ...projectRoutes]
 }

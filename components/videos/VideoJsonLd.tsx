@@ -1,5 +1,7 @@
-import videosData from '@/data/videosData'
+import { allVideos } from 'contentlayer/generated'
 import siteMetadata from '@/data/siteMetadata'
+
+const isProduction = process.env.NODE_ENV === 'production'
 
 interface VideoJsonLdProps {
   locale: 'en' | 'pt'
@@ -9,20 +11,22 @@ interface VideoJsonLdProps {
 // special characters like </script> and HTML entities, making it safe for
 // embedding in <script type="application/ld+json"> without additional
 // sanitization. All input data comes from trusted internal sources
-// (videosData, siteMetadata). Mirrors the convention in
+// (allVideos, siteMetadata). Mirrors the convention in
 // components/seo/JsonLd.tsx.
 export default function VideoJsonLd({ locale }: VideoJsonLdProps) {
-  const items = videosData.map((v) => ({
-    '@context': 'https://schema.org',
-    '@type': 'VideoObject',
-    name: v.title[locale],
-    description: v.description[locale],
-    thumbnailUrl: [`https://i.ytimg.com/vi/${v.youtubeId}/hqdefault.jpg`],
-    uploadDate: v.publishedAt,
-    embedUrl: `https://www.youtube-nocookie.com/embed/${v.youtubeId}`,
-    inLanguage: v.language,
-    author: { '@type': 'Person', name: siteMetadata.author, url: siteMetadata.siteUrl },
-  }))
+  const items = allVideos
+    .filter((v) => !isProduction || !v.draft)
+    .map((v) => ({
+      '@context': 'https://schema.org',
+      '@type': 'VideoObject',
+      name: v.title,
+      description: v.summary,
+      thumbnailUrl: v.poster ? [siteMetadata.siteUrl + v.poster] : undefined,
+      uploadDate: v.date,
+      contentUrl: siteMetadata.siteUrl + v.videoSrc,
+      inLanguage: v.language,
+      author: { '@type': 'Person', name: siteMetadata.author, url: siteMetadata.siteUrl },
+    }))
 
   return (
     <script

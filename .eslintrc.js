@@ -41,6 +41,7 @@ module.exports = {
     'react/prop-types': 0,
     '@typescript-eslint/no-unused-vars': 0,
     'react/no-unescaped-entities': 0,
+    'jsx-a11y/media-has-caption': 0,
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     'jsx-a11y/no-noninteractive-element-to-interactive-role': 2,
     'jsx-a11y/click-events-have-key-events': 2,

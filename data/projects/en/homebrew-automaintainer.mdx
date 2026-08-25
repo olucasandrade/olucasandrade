@@ -1,0 +1,35 @@
+---
+title: Homebrew AutoMaintainer
+language: en
+order: 9
+imgSrc: /static/images/automaintainer_logo.png
+href: https://github.com/olucasandrade/homebrew-automaintainer
+goal: Automate the tedious GitHub chores you'd rather not do.
+stack:
+  - Go
+  - GitHub API
+  - Homebrew
+love: It keeps repos clean without me babysitting pull requests.
+draft: false
+---
+
+## What it does
+
+Homebrew AutoMaintainer is a command-line utility that automates common GitHub maintenance tasks for repositories and organizations, including automated pull request and branch management.
+
+## How to use
+
+Install via Homebrew:
+
+```bash
+brew tap olucasandrade/automaintainer
+brew install automaintainer
+```
+
+Configure the tool with a YAML file or flags, then run a command:
+
+```bash
+automaintainer prune-stale-branches --repo my-org/my-repo
+```
+
+It can close stale pull requests with a friendly comment, delete merged branches older than 30 days, and label incoming issues automatically.

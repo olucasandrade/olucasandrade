@@ -24,9 +24,10 @@ interface PostListProps {
   posts: Post[]
   locale: LocaleTypes
   maxDisplay: number
+  compact?: boolean
 }
 
-const PostList: React.FC<PostListProps> = ({ posts, locale, maxDisplay }) => {
+const PostList: React.FC<PostListProps> = ({ posts, locale, maxDisplay, compact }) => {
   const { t } = useTranslation(locale, 'home')
 
   return (
@@ -34,6 +35,36 @@ const PostList: React.FC<PostListProps> = ({ posts, locale, maxDisplay }) => {
       {!posts.length && <li>{t('noposts')}</li>}
       {posts.slice(0, maxDisplay).map((post, index) => {
         const { slug, date, title, summary, tags } = post
+
+        if (compact) {
+          return (
+            <motion.li
+              key={slug}
+              variants={fadeUp}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, margin: '-60px' }}
+              transition={{ duration: 0.3, delay: index * 0.06, ease: [0.25, 0.1, 0.25, 1] }}
+              className="py-3"
+            >
+              <Link
+                href={`/${locale}/blog/${slug}`}
+                className="group flex flex-col gap-1 rounded-lg p-3 transition-colors hover:bg-gray-100/50 dark:hover:bg-gray-800/50"
+              >
+                <h3 className="text-lg font-semibold leading-7 text-gray-900 group-hover:text-primary-600 dark:text-gray-100 dark:group-hover:text-primary-400">
+                  {title}
+                </h3>
+                <time
+                  dateTime={date}
+                  className="text-sm font-medium text-gray-500 dark:text-gray-400"
+                >
+                  {formatDate(date, locale)}
+                </time>
+              </Link>
+            </motion.li>
+          )
+        }
+
         const decorativeImages = [
           '/static/images/ocean.jpeg',
           '/static/images/canada/lake.jpg',

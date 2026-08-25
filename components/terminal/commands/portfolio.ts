@@ -1,5 +1,5 @@
 import experienceData from '@/data/experienceData'
-import projectsData from '@/data/projectsData'
+import { allProjects } from 'contentlayer/generated'
 
 type Locale = 'en' | 'pt'
 
@@ -95,9 +95,11 @@ function getExperienceText(locale: Locale): string {
 }
 
 function getProjectsText(locale: Locale): string {
-  const projects = projectsData[locale] || projectsData.en
+  const projects = allProjects
+    .filter((p) => p.language === locale)
+    .sort((a, b) => Number(a.order) - Number(b.order))
   return projects
-    .map((p) => `\n> ${p.title}\n  ${p.description.substring(0, 80)}...\n  ${p.href}`)
+    .map((p) => `\n> ${p.title}\n  ${p.goal.substring(0, 80)}...\n  ${p.href}`)
     .join('\n')
 }
 

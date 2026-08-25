@@ -1,13 +1,13 @@
 'use client'
 
+import { useRef } from 'react'
 import { motion } from 'framer-motion'
 import { formatDate } from 'pliny/utils/formatDate'
 import Link from '@/components/mdxcomponents/Link'
 import { useTranslation } from 'app/[locale]/i18n/client'
 import type { LocaleTypes } from 'app/[locale]/i18n/settings'
 import { fadeUp } from '@/lib/animations'
-import type { Video } from '@/data/videosData'
-import LiteYouTube from './LiteYouTube'
+import type { Video } from 'contentlayer/generated'
 
 interface VideoCardProps {
   video: Video
@@ -16,20 +16,35 @@ interface VideoCardProps {
 
 export default function VideoCard({ video, locale }: VideoCardProps) {
   const { t } = useTranslation(locale, 'videos')
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  const aspectClass = video.format === 'short' ? 'aspect-[9/16]' : 'aspect-video'
+
+  const handleVideoClick = () => {
+    videoRef.current?.requestFullscreen().catch(() => {})
+  }
 
   return (
     <motion.article
       variants={fadeUp}
       className="group relative flex flex-col overflow-hidden rounded-xl border border-gray-200/60 bg-white/80 backdrop-blur-sm transition-all duration-300 hover:border-primary-500/40 hover:shadow-primary-glow dark:border-gray-700/60 dark:bg-gray-800/80"
     >
-      <LiteYouTube youtubeId={video.youtubeId} title={video.title[locale]} format={video.format} />
+      <div className={`relative w-full ${aspectClass} bg-gray-900`}>
+        <video
+          ref={videoRef}
+          src={video.videoSrc}
+          poster={video.poster}
+          controls
+          preload="metadata"
+          onClick={handleVideoClick}
+          className="h-full w-full cursor-pointer"
+        />
+      </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-          {video.title[locale]}
-        </h3>
-        <p className="line-clamp-2 text-sm text-gray-500 dark:text-gray-400">
-          {video.description[locale]}
-        </p>
+        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{video.title}</h3>
+        {video.summary && (
+          <p className="line-clamp-2 text-sm text-gray-500 dark:text-gray-400">{video.summary}</p>
+        )}
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-gray-500 dark:text-gray-400">
             {video.duration}
@@ -37,8 +52,8 @@ export default function VideoCard({ video, locale }: VideoCardProps) {
           <span aria-hidden="true" className="text-xs text-gray-400 dark:text-gray-500">
             &middot;
           </span>
-          <time dateTime={video.publishedAt} className="text-xs text-gray-500 dark:text-gray-400">
-            {formatDate(video.publishedAt, locale)}
+          <time dateTime={video.date} className="text-xs text-gray-500 dark:text-gray-400">
+            {formatDate(video.date, locale)}
           </time>
           <span className="ml-auto rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
             <span className="sr-only">{t('languageBadge')}: </span>

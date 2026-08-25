@@ -1,10 +1,10 @@
 import { sortPosts, allCoreContent } from 'pliny/utils/contentlayer'
 import { allBlogs } from 'contentlayer/generated'
 import FeaturedLayout from '@/layouts/FeaturedLayout'
-import HomeLayout from '@/layouts/HomeLayout'
 import HeroSection from '@/components/home/HeroSection'
+import GitHubActivity from '@/components/home/GitHubActivity'
 import ExperienceSummary from '@/components/home/ExperienceSummary'
-import VideosTeaser from '@/components/home/VideosTeaser'
+import ContentSplit from '@/components/home/ContentSplit'
 import { LocaleTypes } from './i18n/settings'
 
 interface PageProps {
@@ -24,12 +24,12 @@ export default async function Page({ params }: PageProps) {
   return (
     <>
       <HeroSection />
+      <GitHubActivity locale={locale} />
       {hasFeaturedPosts.length > 0 && (
         <FeaturedLayout posts={hasFeaturedPosts} params={{ locale }} />
       )}
       <ExperienceSummary />
-      <VideosTeaser locale={locale} />
-      <HomeLayout posts={filteredPosts} params={{ locale }} />
+      <ContentSplit posts={filteredPosts} locale={locale} />
     </>
   )
 }

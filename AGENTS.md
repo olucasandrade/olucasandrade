@@ -52,9 +52,9 @@ data/                 Content and site data
   authors/<locale>/   MDX author pages
   siteMetadata.js     Site-wide config
   localeMetadata.ts   Per-locale SEO title/description
-  projectsData.ts     Project showcase data
+  projects/<locale>/  MDX project detail pages
   experienceData.ts   Work experience data
-  videosData.ts       YouTube video metadata
+  videos/<locale>/    MDX video metadata (local MP4 files in public/static/videos/)
   headerNavLinks.ts   Navigation links
   references-data.bib Citation bibliography
 lib/                  Utility modules
@@ -123,7 +123,7 @@ Verification baseline: `bun run lint` and `bun run build` should both pass.
 
 ### Build-time pipeline
 
-1. `contentlayer2` scans `data/blog/**/*.mdx` and `data/authors/**/*.mdx`, generates typed documents in `.contentlayer/generated/`.
+1. `contentlayer2` scans `data/blog/**/*.mdx`, `data/authors/**/*.mdx`, `data/projects/**/*.mdx`, and `data/videos/**/*.mdx`, then generates typed documents in `.contentlayer/generated/`.
 2. On success it writes:
    - `app/[locale]/tag-data.json` — tag counts split by locale
    - `public/search.json` — documents for the kbar search provider
@@ -160,10 +160,22 @@ Computed fields include `slug`, `path`, `readingTime`, `toc`, and JSON-LD `struc
 
 - `data/siteMetadata.js` — site title, description, social links, analytics/comments/newsletter/search config.
 - `data/localeMetadata.ts` — locale-specific `<title>` and meta description.
-- `data/projectsData.ts` — bilingual project cards for `/projects`.
 - `data/experienceData.ts` — bilingual work experience for `/experience`.
-- `data/videosData.ts` — YouTube video metadata. The `/videos` section is gated: it only appears in the nav, homepage, and sitemap once this array has entries.
 - `data/headerNavLinks.ts` — top-level navigation.
+
+### Projects MDX (`data/projects/<locale>/<slug>.mdx`)
+
+- `title`, `language` (required), `order` (required, number), `href` (required — external project URL)
+- `goal` (one-shot phrase), `stack` (list of strings), `love` (one-shot phrase)
+- `imgSrc`, `draft`
+- The MDX body is the detail-page content: how to use, examples, install instructions.
+
+### Videos MDX (`data/videos/<locale>/<slug>.mdx`)
+
+- `title`, `language` (required), `date` (required), `duration` (required), `videoSrc` (required — path under `public/static/videos/`)
+- `format` (`landscape` or `short`), `poster`, `summary`, `tags`, `relatedPost`, `relatedProject`, `draft`
+- The actual video file lives in `public/static/videos/<filename>.mp4`.
+- The `/videos` section is gated: nav link, homepage teaser, and sitemap entry only appear once `allVideos` is non-empty.
 
 ## Internationalization
 
@@ -248,6 +260,7 @@ Copy `.env.example` to `.env` and fill values for the services you enable. None 
 - **Analytics:** `NEXT_UMAMI_ID` (and matching CSP entry if enabled)
 - **Newsletter:** one of Mailchimp / Buttondown / ConvertKit / Klaviyo / Revue / EmailOctopus keys, depending on `siteMetadata.newsletter.provider`
 - **Blog stats:** `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
+- **GitHub activity card:** `GITHUB_TOKEN` (read-only PAT with `read:user` + `public_repo`)
 - **Disqus / Utterances:** optional comment provider env vars
 
 Never commit `.env` files. They are gitignored.
@@ -267,8 +280,9 @@ The project is designed to deploy on **Vercel** (Next.js native, `.vercel` is gi
 ## Common Tasks for Agents
 
 - **Add a blog post:** Create `data/blog/en/<slug>.mdx` and optionally `data/blog/pt/<slug>.mdx` with matching `slug` logic. Set `language`, `date`, `tags`, `authors`, `summary`, `images`. Run `bun run build`.
-- **Update projects/experience:** Edit `data/projectsData.ts` or `data/experienceData.ts`; maintain both `en` and `pt` entries.
-- **Publish a video:** Add an entry to `data/videosData.ts` following the documented shape. Once the array is non-empty, the nav link, homepage teaser, and sitemap entry activate automatically.
+- **Add or update a project:** Create `data/projects/en/<slug>.mdx` and optionally `data/projects/pt/<slug>.mdx`. Fill `title`, `language`, `order`, `href`, `goal`, `stack`, `love`, `imgSrc`, and write the detail body. Run `bun run build`.
+- **Update experience:** Edit `data/experienceData.ts`; maintain both `en` and `pt` entries.
+- **Publish a video:** Drop the `.mp4` in `public/static/videos/` and create `data/videos/en/<slug>.mdx` (plus `pt` if needed) with `title`, `language`, `date`, `duration`, `videoSrc`, and optional `poster`/`summary`/`tags`. Once `allVideos` is non-empty, the nav link, homepage teaser, and sitemap entry activate automatically.
 - **Change SEO metadata:** Update `data/localeMetadata.ts` or `data/siteMetadata.js`.
 - **Add a new translation namespace:** Add JSON files under `app/[locale]/i18n/locales/<lang>/`, then import via `createTranslation` or `useTranslation`.
 - **Add external integrations:** Update both `data/siteMetadata.js` and the CSP in `next.config.js`, plus environment variables.

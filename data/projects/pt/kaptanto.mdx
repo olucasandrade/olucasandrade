@@ -1,0 +1,50 @@
+---
+title: Kaptanto
+language: pt
+order: 1
+imgSrc: /static/images/kaptanto_logo.png
+href: https://github.com/olucasandrade/kaptanto
+goal: Pegar mudanças do banco em tempo real e encaminhar para onde quiser.
+stack:
+  - Go
+  - Postgres
+  - MongoDB
+  - gRPC
+  - SSE
+love: Dá pra usar CDC para um monte de coisa, e você ainda não percebeu... ainda.
+draft: false
+---
+
+## O que faz
+
+O Kaptanto se conecta ao WAL do Postgres ou aos Change Streams do MongoDB e emite um stream unificado de eventos do banco. Você pode consumir esses eventos via stdout (NDJSON), HTTP Server-Sent Events ou gRPC.
+
+## Como usar
+
+Execute o binário contra o seu banco e escolha uma saída:
+
+```bash
+kaptanto --source postgres --output sse --port 8080
+```
+
+Os consumidores se conectam e recebem eventos conforme as linhas são alteradas. Cursores são persistidos por consumidor, então reinícios retomam a partir do último evento confirmado.
+
+Encaminhe NDJSON para outra ferramenta:
+
+```bash
+kaptanto --source mongo --output ndjson | jq .
+```
+
+Ou se inscreva via gRPC a partir do seu próprio serviço:
+
+```go
+stream, _ := client.Subscribe(ctx, &kaptanto.Subscription{
+    Consumer: "payments-worker",
+})
+```
+
+Baixe um release para sua plataforma ou instale com Go:
+
+```bash
+go install github.com/olucasandrade/kaptanto@latest
+```

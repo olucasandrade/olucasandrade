@@ -1,0 +1,37 @@
+---
+title: SDPD — Systems Design Police Department
+language: pt
+order: 2
+imgSrc: /static/images/sdpd_logo.png
+href: https://github.com/olucasandrade/sdpd
+goal: Aprender sistemas distribuídos resolvendo cenas de crime.
+stack:
+  - Next.js
+  - TypeScript
+  - MDX
+love: Eu amo system design e amo ajudar a comunidade. Então é o mashup perfeito.
+draft: false
+---
+
+## O que faz
+
+O SDPD é uma plataforma de aprendizado gamificada com 33 casos interativos no estilo detetive. Cada caso te coloca na cena de uma falha de sistema — você investiga pistas, diagnostica a causa raiz e recomenda uma correção.
+
+## Como usar
+
+Abra um caso, leia o relatório do incidente, inspecione as pistas e envie seu diagnóstico. Os casos cobrem replicação, modelos de consistência, estratégias de cache, mensageria e mais.
+
+Inicie o servidor local:
+
+```bash
+git clone https://github.com/olucasandrade/sdpd.git
+cd sdpd
+pnpm install
+pnpm dev
+```
+
+Experimente alguns casos de exemplo:
+
+- **Caso 04**: Um cache stampede derruba uma página de promoção relâmpago.
+- **Caso 17**: Um bug de eleição de líder causa split-brain em um banco replicado.
+- **Caso 31**: Um backlog de mensagens desencadeia timeouts em cascata.

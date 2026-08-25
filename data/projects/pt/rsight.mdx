@@ -1,0 +1,46 @@
+---
+title: rsight
+language: pt
+order: 3
+imgSrc: /static/images/rsight_logo.png
+href: https://github.com/olucasandrade/rsight
+goal: Achar qualquer coisa no seu Mac direto do terminal em milissegundos.
+stack:
+  - Rust
+  - macOS
+  - Spotlight APIs
+love: É muito legal construir TUIs, especialmente quando resolve seu problema.
+draft: false
+---
+
+## O que faz
+
+O rsight é uma ferramenta rápida de busca no terminal para macOS. Ele pesquisa arquivos, pastas, conteúdo de arquivos e conversas de IA (Claude Code, Cursor, Codex) em todo o diretório home a partir de uma única interface.
+
+## Como usar
+
+Instale via Homebrew ou cargo:
+
+```bash
+brew install olucasandrade/tap/rsight
+# ou
+cargo install rsight
+```
+
+Inicie o rsight e digite sua consulta. Os resultados aparecem em streaming enquanto você digita:
+
+```bash
+rsight "user service auth"
+```
+
+Encontre toda menção a uma função no código e nos logs de chat:
+
+```bash
+rsight "handleCheckout" --include-ai
+```
+
+Abra a primeira correspondência diretamente no seu editor:
+
+```bash
+rsight "config.go" --open
+```

@@ -190,9 +190,48 @@ export const Authors = defineDocumentType(() => ({
   computedFields,
 }))
 
+export const Project = defineDocumentType(() => ({
+  name: 'Project',
+  filePathPattern: 'projects/**/*.mdx',
+  contentType: 'mdx',
+  fields: {
+    title: { type: 'string', required: true },
+    language: { type: 'string', required: true },
+    order: { type: 'number', required: true },
+    imgSrc: { type: 'string' },
+    href: { type: 'string', required: true },
+    goal: { type: 'string', required: true },
+    stack: { type: 'list', of: { type: 'string' }, default: [] },
+    love: { type: 'string', required: true },
+    draft: { type: 'boolean' },
+  },
+  computedFields,
+}))
+
+export const Video = defineDocumentType(() => ({
+  name: 'Video',
+  filePathPattern: 'videos/**/*.mdx',
+  contentType: 'mdx',
+  fields: {
+    title: { type: 'string', required: true },
+    language: { type: 'string', required: true },
+    date: { type: 'date', required: true },
+    duration: { type: 'string', required: true },
+    format: { type: 'string', default: 'landscape' },
+    videoSrc: { type: 'string', required: true },
+    poster: { type: 'string' },
+    summary: { type: 'string' },
+    tags: { type: 'list', of: { type: 'string' }, default: [] },
+    relatedPost: { type: 'string' },
+    relatedProject: { type: 'string' },
+    draft: { type: 'boolean' },
+  },
+  computedFields,
+}))
+
 export default makeSource({
   contentDirPath: 'data',
-  documentTypes: [Blog, Authors],
+  documentTypes: [Blog, Authors, Project, Video],
   mdx: {
     cwd: process.cwd(),
     remarkPlugins: [

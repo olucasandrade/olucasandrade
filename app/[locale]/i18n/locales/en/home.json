@@ -34,5 +34,9 @@
   "moretags_aria": "Show more tags",
   "lesstags_aria": "Show fewer tags",
   "latestVideos": "Latest videos",
-  "allVideos": "All videos"
+  "allVideos": "All videos",
+  "latestPosts": "Latest posts",
+  "githubActivity": "GitHub activity",
+  "stars": "Stars",
+  "contributionsYear": "Contributions this year"
 }

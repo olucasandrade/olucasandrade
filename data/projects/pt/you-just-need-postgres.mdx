@@ -1,0 +1,29 @@
+---
+title: Você Só Precisa de Postgres
+language: pt
+order: 4
+imgSrc: /static/images/youjustneedpostgres_logo.png
+href: https://youjustneedpostgres.com
+goal: Pare de adicionar bancos antes de provar que o Postgres não consegue fazer.
+stack:
+  - Postgres
+  - Next.js
+  - MDX
+love: Centenas de stars, pessoas compartilhando pela internet como argumento... eu consegui provar meu ponto.
+draft: false
+---
+
+## O que faz
+
+Você Só Precisa de Postgres é um site e coleção de artigos defendendo que o Postgres pode substituir Redis, Elasticsearch, MongoDB e RabbitMQ na maioria das aplicações.
+
+## Como usar
+
+Navegue pelos padrões ou leia um caso de uso específico. Cada artigo mostra qual recurso do Postgres você pode usar em vez de adicionar outra ferramenta, e você pode aplicá-lo diretamente na sua própria instância Postgres.
+
+Substituições comuns:
+
+- **Fila de jobs** com `FOR UPDATE SKIP LOCKED`.
+- **Busca full-text** com `tsvector` e `tsquery`.
+- **Eventos em tempo real** com `LISTEN` / `NOTIFY`.
+- **Cache** com tabelas unlogged e TTLs agressivos.

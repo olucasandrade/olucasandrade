@@ -1,0 +1,37 @@
+---
+title: SDPD — Systems Design Police Department
+language: en
+order: 2
+imgSrc: /static/images/sdpd_logo.png
+href: https://github.com/olucasandrade/sdpd
+goal: Learn distributed systems by solving crime scenes.
+stack:
+  - Next.js
+  - TypeScript
+  - MDX
+love: I love system design, and love to help community. So it's a perfect mashup.
+draft: false
+---
+
+## What it does
+
+SDPD is a gamified learning platform with 33 interactive detective cases. Each case puts you at the scene of a system failure — you investigate evidence, diagnose the root cause, and recommend a fix.
+
+## How to use
+
+Open a case, read the incident report, inspect the clues, and submit your diagnosis. Cases cover replication, consistency models, caching strategies, messaging, and more.
+
+Start the local server:
+
+```bash
+git clone https://github.com/olucasandrade/sdpd.git
+cd sdpd
+pnpm install
+pnpm dev
+```
+
+Try a few sample cases:
+
+- **Case 04**: A cache stampede takes down a flash-sale endpoint.
+- **Case 17**: A leader election bug causes split-brain in a replicated database.
+- **Case 31**: A messaging backlog triggers cascading timeouts.

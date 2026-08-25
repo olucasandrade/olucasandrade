@@ -6,7 +6,7 @@ import Image from 'next/image'
 import Link from '../mdxcomponents/Link'
 import siteMetadata from '@/data/siteMetadata'
 import headerNavLinks from '@/data/headerNavLinks'
-import videosData from '@/data/videosData'
+import { allVideos } from 'contentlayer/generated'
 import { Authors, allAuthors } from 'contentlayer/generated'
 import { useParams } from 'next/navigation'
 import { useTranslation } from 'app/[locale]/i18n/client'
@@ -29,7 +29,7 @@ export function ChevronDownIcon({ className, ...props }: SVGProps<SVGSVGElement>
 // Hidden while empty: the /videos nav link only shows once the first
 // video is published (see data/videosData.ts).
 const visibleLinks = headerNavLinks.filter(
-  (link) => link.href !== '/videos' || videosData.length > 0
+  (link) => link.href !== '/videos' || allVideos.length > 0
 )
 
 const MobileNav = () => {

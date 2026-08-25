@@ -1,0 +1,37 @@
+---
+title: URL Analyzer (Go Package)
+language: en
+order: 10
+imgSrc: /static/images/url_analyzer_logo.png
+href: https://github.com/olucasandrade/url-analyzer
+goal: Measure page load metrics programmatically.
+stack:
+  - Go
+  - net/http
+  - Performance APIs
+love: It gives you fast, scriptable web performance data.
+draft: false
+---
+
+## What it does
+
+URL Analyzer is a Go package for analyzing website performance metrics such as page load time, HTTP request count, and page size.
+
+## How to use
+
+Add it to your project:
+
+```bash
+go get github.com/olucasandrade/url-analyzer
+```
+
+Analyze a URL from your code:
+
+```go
+import "github.com/olucasandrade/url-analyzer"
+
+result, _ := analyzer.Analyze("https://example.com")
+fmt.Println(result.LoadTime, result.RequestCount, result.PageSize)
+```
+
+Use it to run a batch scan across a sitemap, add performance assertions to CI, or build a simple uptime monitor.

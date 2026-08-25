@@ -3,7 +3,7 @@
 import { useParams, usePathname } from 'next/navigation'
 import siteMetadata from '@/data/siteMetadata'
 import headerNavLinks from '@/data/headerNavLinks'
-import videosData from '@/data/videosData'
+import { allVideos } from 'contentlayer/generated'
 import Logo from '@/data/logo.svg'
 import Link from '../mdxcomponents/Link'
 import AuthorsMenu from './AuthorsMenu'
@@ -20,7 +20,7 @@ import { ChevronDownIcon } from '../langswitch/icon'
 // Hidden while empty: the /videos nav link only shows once the first
 // video is published (see data/videosData.ts).
 const visibleLinks = headerNavLinks.filter(
-  (link) => link.href !== '/videos' || videosData.length > 0
+  (link) => link.href !== '/videos' || allVideos.length > 0
 )
 
 // Home is rendered separately (as the site title), so it's excluded here.

@@ -1,0 +1,29 @@
+---
+title: You Just Need Postgres
+language: en
+order: 4
+imgSrc: /static/images/youjustneedpostgres_logo.png
+href: https://youjustneedpostgres.com
+goal: Stop adding databases before you prove Postgres cannot do it.
+stack:
+  - Postgres
+  - Next.js
+  - MDX
+love: Hundreds of stars, people sharing it as an argument through the internet... I just proved my point.
+draft: false
+---
+
+## What it does
+
+You Just Need Postgres is a site and collection of articles arguing that Postgres can replace Redis, Elasticsearch, MongoDB, and RabbitMQ for most applications.
+
+## How to use
+
+Browse the patterns or read a specific use-case. Each article shows the Postgres feature you can use instead of adding another tool, then apply it directly to your own Postgres instance.
+
+Common replacements:
+
+- **Job queue** with `FOR UPDATE SKIP LOCKED`.
+- **Full-text search** with `tsvector` and `tsquery`.
+- **Realtime events** with `LISTEN` / `NOTIFY`.
+- **Cache** with unlogged tables and aggressive TTLs.

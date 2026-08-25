@@ -1,0 +1,35 @@
+---
+title: Homebrew AutoMaintainer
+language: pt
+order: 9
+imgSrc: /static/images/automaintainer_logo.png
+href: https://github.com/olucasandrade/homebrew-automaintainer
+goal: Automatizar as tarefas chatas do GitHub que você preferia não fazer.
+stack:
+  - Go
+  - GitHub API
+  - Homebrew
+love: Mantém os repos limpos sem eu ficar vigiando pull requests.
+draft: false
+---
+
+## O que faz
+
+O Homebrew AutoMaintainer é um utilitário de linha de comando que automatiza tarefas comuns de manutenção do GitHub para repositórios e organizações, incluindo gerenciamento automatizado de pull requests e branches.
+
+## Como usar
+
+Instale via Homebrew:
+
+```bash
+brew tap olucasandrade/automaintainer
+brew install automaintainer
+```
+
+Configure a ferramenta com um arquivo YAML ou flags e execute um comando:
+
+```bash
+automaintainer prune-stale-branches --repo my-org/my-repo
+```
+
+Ela pode fechar pull requests parados com um comentário amigável, excluir branches já mergeados com mais de 30 dias e rotular novas issues automaticamente.

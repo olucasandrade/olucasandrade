@@ -47,3 +47,6 @@ yarn-error.log*
 # Contentlayer
 .contentlayer
 tsconfig.tsbuildinfo
+
+# Local Cursor skills (do not commit)
+.cursor/skills/

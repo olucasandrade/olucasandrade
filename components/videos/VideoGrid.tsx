@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import type { LocaleTypes } from 'app/[locale]/i18n/settings'
 import { staggerContainer } from '@/lib/animations'
-import type { Video } from '@/data/videosData'
+import type { Video } from 'contentlayer/generated'
 import VideoCard from './VideoCard'
 
 interface VideoGridProps {
@@ -60,7 +60,7 @@ export default function VideoGrid({ videos, locale }: VideoGridProps) {
         className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3"
       >
         {filteredVideos.map((video) => (
-          <VideoCard key={video.youtubeId} video={video} locale={locale} />
+          <VideoCard key={video.slug} video={video} locale={locale} />
         ))}
       </motion.div>
     </div>

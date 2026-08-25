@@ -1,0 +1,50 @@
+---
+title: Kaptanto
+language: en
+order: 1
+imgSrc: /static/images/kaptanto_logo.png
+href: https://github.com/olucasandrade/kaptanto
+goal: Capture database changes as a real-time stream and pipe them wherever you want.
+stack:
+  - Go
+  - Postgres
+  - MongoDB
+  - gRPC
+  - SSE
+love: You can use CDCs for a lot of things, and didn't noticed... yet.
+draft: false
+---
+
+## What it does
+
+Kaptanto connects to Postgres WAL or MongoDB Change Streams and emits a unified stream of database events. You can consume those events via stdout (NDJSON), HTTP Server-Sent Events, or gRPC.
+
+## How to use
+
+Run the binary against your database and pick an output:
+
+```bash
+kaptanto --source postgres --output sse --port 8080
+```
+
+Consumers connect and receive events as rows change. Cursors are persisted per consumer, so restarts resume from the last acknowledged event.
+
+Pipe NDJSON into another tool:
+
+```bash
+kaptanto --source mongo --output ndjson | jq .
+```
+
+Subscribe over gRPC from your own service:
+
+```go
+stream, _ := client.Subscribe(ctx, &kaptanto.Subscription{
+    Consumer: "payments-worker",
+})
+```
+
+Download a release for your platform, or install with Go:
+
+```bash
+go install github.com/olucasandrade/kaptanto@latest
+```
