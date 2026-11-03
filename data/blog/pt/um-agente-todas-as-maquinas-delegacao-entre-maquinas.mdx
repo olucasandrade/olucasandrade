@@ -1,0 +1,141 @@
+---
+title: 'Um Agente, Todas as Máquinas: Desenhando Delegação Entre Máquinas no OpenBot'
+date: '2026-11-03'
+language: pt
+tags: ['openbot', 'ai-agents', 'distributed-systems', 'security', 'developer-tools']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Seu agente de IA não deveria parar na borda do computador onde foi instalado. Tenho trabalhado na delegação entre máquinas do OpenBot: parear dispositivos, rotear ações, manter aprovações locais e preservar uma única conversa entre todos eles.'
+images: ['/static/images/twitter-card.png']
+---
+
+Seu agente de IA consegue ler arquivos, rodar comandos, usar apps e automatizar uma quantidade assustadora do seu trabalho. Mas, no momento em que o arquivo que você precisa tá em outro laptop, pare por um segundo.
+
+Por que seu agente de repente vira inútil?
+
+Eu trabalho no [OpenBot](https://github.com/CopilotKit/OpenBot), e essa pergunta ficou na minha cabeça. Um bot rodando no seu servidor consegue te ajudar pelo celular, o que é ótimo até o trabalho de verdade estar no seu laptop do trabalho. O servidor tem a conversa. O laptop tem o repositório. E você vira a camada de integração entre os dois.
+
+Copiar contexto de um chat pro outro não é um workflow. É castigo.
+
+[Um feature request](https://github.com/CopilotKit/OpenBot/issues/942) descreveu esse problema muito bem: um OpenBot num servidor, dois laptops com suas próprias instalações, e uma única conversa capaz de agir nas três máquinas. "No meu laptop do trabalho, confere X" deveria simplesmente funcionar.
+
+Tenho trabalhado no que precisa existir pra tornar isso real. Isso aqui não é um anúncio de lançamento — a delegação entre máquinas ainda não foi entregue. É o relato do desenho, das peças que já foram mergeadas e dos problemas que acabaram importando mais que a parte de rede.
+
+## Cada Instalação É uma Ilha
+
+A versão fácil de um agente de IA é um bot e um computador. As tools rodam localmente, os arquivos são locais, as aprovações são locais. Existe uma fronteira pra raciocinar sobre.
+
+Agora adiciona um segundo computador.
+
+Você não tem simplesmente o dobro de computação. Tem dois filesystems, dois conjuntos de apps instalados, dois ambientes de rede e dois lugares onde alguma coisa pode dar errado. Um laptop corporativo pode ter acessos que seu servidor nunca deveria ter. Seu laptop pessoal pode estar dormindo. E os dois podem ter um diretório chamado `projeto`, porque claro que podem.
+
+A resposta ingênua é "deixa o bot principal entrar por SSH na outra máquina". Parabéns, você reinventou administração remota com uma caixa de chat e um modelo de permissões pior (lmaooo).
+
+SSH pode fazer parte de uma gambiarra pessoal, mas não é o produto que eu quero. Não quero expor portas de entrada, distribuir uma pilha de credenciais ou fazer o usuário montar o próprio protocolo de controle remoto. O OpenBot já tá instalado no laptop. É essa instalação que deveria se conectar, se autenticar e fazer o trabalho.
+
+A feature não é "rodar um shell command pela internet". É **deixar uma conversa alcançar o computador certo sem tirar o controle de você**.
+
+## As Bases Já Existem
+
+A boa notícia: nem tudo precisa ser inventado.
+
+[O PR #871](https://github.com/CopilotKit/OpenBot/pull/871) mudou o OpenBot para **um computador por pessoa**, com computadores isolados disponíveis para os Bots que precisam disso. O computador é escolhido a partir da pessoa autenticada e das configurações do Bot, não do que um cliente resolve mandar. Toda ação continua passando pelo mesmo caminho de decisão e auditoria.
+
+Isso importa porque a delegação entre máquinas deveria estender a identidade, não ignorar ela. "Qual máquina?" é uma pergunta nova. "Qual pessoa tem permissão pra fazer isso?" não é.
+
+[O PR #956](https://github.com/CopilotKit/OpenBot/pull/956) fez de todo Bot um orquestrador. Um Bot pode delegar trabalho para subagentes que herdam suas tools, seu computador, suas permissões e suas instruções permanentes. Quando um subagente chega numa ação que precisa de aprovação, ele para e devolve a ação pra conversa principal em vez de inventar um segundo fluxo de aprovação.
+
+Isso nos dá um modelo útil pra delegação: quem recebe a tarefa faz o trabalho, mas a pessoa mantém a conversa e a autoridade.
+
+Nenhum desses PRs conecta seus laptops. Quero deixar isso muito claro. Eles resolvem problemas adjacentes — identidade, isolamento, orquestração, aprovações — e o trabalho entre máquinas se apoia nessas primitivas.
+
+## Os Quatro Passos
+
+O desenho em que tenho trabalhado tem quatro partes. Elas parecem independentes até você tentar pular uma.
+
+### 1. Parear as Máquinas
+
+Cada laptop abre uma conexão de saída com a instância principal do OpenBot. Sem porta de entrada no laptop, sem servidor SSH, sem exigir que os dois dispositivos estejam na mesma rede.
+
+O pareamento precisa ser explícito. Uma máquina não fica acessível só porque conhece uma URL. O usuário pareia aquela instalação, dá um nome reconhecível e pode revogar o acesso depois.
+
+A instância principal então conhece `servidor`, `laptop-pessoal` e `laptop-trabalho` como lugares distintos onde o trabalho pode acontecer. Não são hosts intercambiáveis. São lugares com capacidades e regras próprias.
+
+### 2. Rotear a Ação
+
+Quando você diz "no meu laptop do trabalho, confere o processo do Kaptanto", a máquina é explícita. Fácil.
+
+Quando você diz "confere o processo do Kaptanto", o agente precisa decidir se a request tem contexto suficiente pra rotear com segurança. Um bom roteador não deveria transformar ambiguidade numa ação surpresa no computador errado.
+
+A mensagem conceitual é pequena:
+
+```ts
+type RemoteAction = {
+  machine: 'work-laptop'
+  tool: 'shell'
+  input: { command: 'check-kaptanto-status' }
+  approvalPolicy: 'work-laptop'
+}
+```
+
+Infelizmente, o trabalho de verdade não é o type em TypeScript. É autenticar a máquina, preservar a pessoa e o Bot por trás da request, aplicar a política local, streamar o resultado de volta e registrar onde cada ação rodou.
+
+E quando o laptop estiver offline, a resposta é "o laptop está offline". Não é um sucesso falso, não é um spinner infinito e definitivamente não é rodar o comando em outro lugar só porque aquela máquina tá disponível.
+
+### 3. Manter Permissões por Máquina
+
+Seu laptop do trabalho não é seu laptop pessoal com um wallpaper diferente.
+
+Uma regra que faz sentido na sua máquina de casa pode ser inaceitável numa máquina corporativa. Certos paths podem ser proibidos. Algumas ações podem sempre exigir aprovação. Outras podem ser bloqueadas completamente, não importa o quão educadamente o Bot principal peça.
+
+O laptop tem a palavra final. A instância principal pode pedir uma ação, mas não pode passar por cima da política da máquina que vai executá-la.
+
+O event log precisa da mesma fronteira. Cada entrada deveria deixar a máquina visível: o que rodou, onde rodou, quem pediu e qual aprovação permitiu. Se você precisar reconstruir um incidente depois, "a IA fez isso em algum lugar" não é uma trilha de auditoria.
+
+### 4. Compartilhar a Conversa, Não Todos os Segredos
+
+O sonho é uma conversa, uma memória e um conjunto de routines. Você começa uma tarefa pelo celular, o servidor coordena e o laptop certo faz a parte local.
+
+Isso não significa copiar cada arquivo, credencial, perfil de browser e nota privada para todas as máquinas. Compartilhar contexto deveria significar que a tarefa sobrevive ao handoff. Não deveria significar que os segredos do laptop do trabalho ficam disponíveis na máquina pessoal porque sincronização é conveniente.
+
+Esse é o equilíbrio ao qual eu continuo voltando: **continuidade pro usuário, fronteiras pras máquinas**.
+
+## Uma Demo que Eu Quero Usar de Verdade
+
+Aqui vai um cenário concreto que tô usando pra pensar na experiência. É uma demo planejada, não algo que a feature consegue fazer hoje.
+
+Eu tenho o [Kaptanto](https://kaptan.to) rodando num laptop. O Kaptanto é minha ferramenta de Change Data Capture: ela escuta mudanças no banco e streama inserts, updates e deletes para os consumidores.
+
+Pelo celular, quero poder dizer pra instância do OpenBot no meu servidor:
+
+> No meu laptop do trabalho, confere se o Kaptanto ainda está streamando mudanças. Se ele parou, me mostra o último erro. Não reinicia sem me perguntar.
+
+Essa request exercita a feature inteira. A conversa tá no servidor. O processo e os logs estão no laptop. Ler o status pode ser permitido pelas regras daquela máquina. Reiniciar um processo precisa de aprovação. A resposta deveria voltar pra mesma conversa, com a máquina claramente identificada.
+
+Sem cerimônia de VPN. Sem abrir outro chat em outra instalação. Sem colar logs de um bot no outro.
+
+Se esse fluxo parecer natural, o desenho tá fazendo seu trabalho. Se eu precisar explicar uma tabela de roteamento antes de começar a demo, ainda não tá pronto.
+
+## A Parte Difícil É Confiança
+
+A rede é trabalho de verdade, mas a pergunta difícil de produto é confiança.
+
+O que acontece se duas instalações pareadas usarem o mesmo nome? E se uma máquina ficar offline no meio de uma ação? E se a instância principal achar que uma aprovação cobre um comando, mas a política do laptop discordar? E se uma tarefa delegada devolver um output sensível que não deveria ser guardado no contexto compartilhado?
+
+Um sistema distribuído te dá mais modos de falha. Um agente dá a esses modos de falha a capacidade de agir.
+
+Então os detalhes chatos viram a feature: identidade estável da máquina, pareamento explícito, permissões restritas, aprovações visíveis, estados offline honestos e logs úteis. Nada disso faz um GIF bonito de lançamento. Tudo isso determina se eu deixaria o negócio rodando nas minhas próprias máquinas.
+
+## O que Aprendi Até Aqui
+
+Eu comecei com "um Bot deveria usar vários computadores". O enquadramento melhor é "uma pessoa deveria manter uma conversa através de vários computadores".
+
+Isso muda o desenho. O Bot principal não é um control plane onipotente. Cada máquina não é um worker descartável. O sistema só funciona se a delegação preservar a intenção do usuário e as fronteiras da máquina ao mesmo tempo.
+
+Ainda tem bastante implementação pela frente, e não vou fingir que um documento de desenho é uma feature entregue. A issue é pública, as bases foram mergeadas e o caminho é concreto: pareamento, roteamento, política por máquina e, depois, contexto compartilhado.
+
+Seu agente não deveria se importar com qual máquina você tá usando pra conversar. Ele deveria se importar muito com qual máquina tá usando pra agir.
+
+Dúvidas? Deixa nos comentários!
+
+Até a próxima!

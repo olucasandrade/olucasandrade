@@ -1,0 +1,141 @@
+---
+title: 'One Agent, Every Machine: Designing Cross-Machine Delegation in OpenBot'
+date: '2026-11-03'
+language: en
+tags: ['openbot', 'ai-agents', 'distributed-systems', 'security', 'developer-tools']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Your AI agent should not stop at the edge of the computer where it was installed. I have been working through cross-machine delegation for OpenBot: pairing devices, routing actions, keeping approvals local, and preserving one conversation across all of them.'
+images: ['/static/images/twitter-card.png']
+---
+
+Your AI agent can read files, run commands, use apps, and automate a scary amount of your work. But the moment the file you need is on another laptop, stop for a second.
+
+Why does your agent suddenly become useless?
+
+I work on [OpenBot](https://github.com/CopilotKit/OpenBot), and this question has been stuck in my head. A bot running on your server can help from your phone, which is great until the actual work lives on your work laptop. The server has the conversation. The laptop has the repository. And you're the integration layer between them.
+
+Copying context from one chat to another is not a workflow. It's a punishment.
+
+[A feature request](https://github.com/CopilotKit/OpenBot/issues/942) put this problem very clearly: one OpenBot on a server, two laptops with their own installs, and one conversation that can act on all three machines. "On my work laptop, check X" should just work.
+
+I've been working through what it takes to make that real. This is not a launch announcement — cross-machine delegation is not shipped yet. It's the story of the design, the pieces already merged, and the problems that turned out to matter more than the networking.
+
+## Every Install Is an Island
+
+The easy version of an AI agent is one bot and one computer. Tools run locally, files are local, approvals are local. There is one boundary to reason about.
+
+Now add a second computer.
+
+You don't just have twice the compute. You have two filesystems, two sets of installed apps, two network environments, and two places where something can go wrong. A corporate laptop might have access that your server should never have. Your personal laptop might be asleep. Both might have a directory called `project`, because of course they do.
+
+The naive answer is "let the main bot SSH into the other machine." Congratulations, you've reinvented remote administration with a chat box and a worse permission model (lmaooo).
+
+SSH can be part of a personal workaround, but it's not the product I want. I don't want to expose inbound ports, distribute a pile of credentials, or make the user assemble their own remote-control protocol. OpenBot is already installed on the laptop. That install should be the thing that connects, authenticates, and does the work.
+
+The feature is not "run a shell command over the internet." It's **letting one conversation reach the right computer without giving up control**.
+
+## The Foundations Are Already There
+
+The good news: not everything needs to be invented.
+
+[PR #871](https://github.com/CopilotKit/OpenBot/pull/871) changed OpenBot to **one computer per person**, with isolated computers available for Bots that need them. The computer is selected from the authenticated person and the Bot's settings, not from whatever a client happens to send. Every action still goes through the same decision and audit path.
+
+That matters because cross-machine delegation should extend identity, not bypass it. "Which machine?" is a new question. "Which person is allowed to do this?" is not.
+
+[PR #956](https://github.com/CopilotKit/OpenBot/pull/956) made every Bot an orchestrator. A Bot can delegate work to subagents that inherit its tools, computer, permissions, and standing instructions. When a subagent reaches an action that needs approval, it stops and hands that action back to the main conversation instead of inventing a second approval flow.
+
+That gives us a useful model for delegation: the worker does the job, but the person keeps the conversation and the authority.
+
+Neither PR connects your laptops. I want to be very clear about that. They solve adjacent problems — identity, isolation, orchestration, approvals — and cross-machine work builds on those primitives.
+
+## The Four Steps
+
+The design I'm working through has four parts. They sound independent until you try to skip one.
+
+### 1. Pair the Machines
+
+Each laptop connects outbound to the main OpenBot instance. No inbound port on the laptop, no SSH server, no requirement that both devices are on the same network.
+
+Pairing has to be explicit. A machine doesn't become reachable because it knows a URL. The user pairs that install, gives it a recognizable name, and can revoke it later.
+
+The main instance then knows about `server`, `personal-laptop`, and `work-laptop` as distinct places where work can happen. Not interchangeable hosts. Places with their own capabilities and rules.
+
+### 2. Route the Action
+
+When you say "on my work laptop, check the Kaptanto process," the machine is explicit. Easy.
+
+When you say "check the Kaptanto process," the agent needs to decide whether the request has enough context to route safely. A good router should not turn ambiguity into a surprise action on the wrong computer.
+
+The conceptual message is small:
+
+```ts
+type RemoteAction = {
+  machine: 'work-laptop'
+  tool: 'shell'
+  input: { command: 'check-kaptanto-status' }
+  approvalPolicy: 'work-laptop'
+}
+```
+
+The real work is not the TypeScript type, sadly. It's authenticating the machine, preserving the person and Bot behind the request, applying local policy, streaming the result back, and recording where every action ran.
+
+And when the laptop is offline, the answer is "the laptop is offline." Not a fake success, not an infinite spinner, and definitely not running the command somewhere else because that machine happens to be available.
+
+### 3. Keep Permissions Per Machine
+
+Your work laptop is not your personal laptop with a different wallpaper.
+
+A rule that is fine on your home machine might be unacceptable on a corporate one. Certain paths can be off-limits. Some actions can always require approval. Others can be blocked completely, no matter how nicely the main Bot asks.
+
+The laptop gets the final say. The main instance can request an action, but it cannot override the policy of the machine that will execute it.
+
+The event log needs the same boundary. Every entry should make the machine visible: what ran, where it ran, who asked, and which approval allowed it. If you need to reconstruct an incident later, "the AI did it somewhere" is not an audit trail.
+
+### 4. Share the Conversation, Not Every Secret
+
+The dream is one conversation, memory, and set of routines. You start a task from your phone, the server coordinates it, and the right laptop does the local part.
+
+That does not mean copying every file, credential, browser profile, and private note to every machine. Shared context should mean the task survives the handoff. It should not mean your work laptop's secrets become available to your personal machine because synchronization is convenient.
+
+This is the balance I keep coming back to: **continuity for the user, boundaries for the machines**.
+
+## A Demo I Actually Want to Use
+
+Here's a concrete scenario I'm using to think about the experience. It's a planned demo, not something the feature can do today.
+
+I have [Kaptanto](https://kaptan.to) running on a laptop. Kaptanto is my Change Data Capture tool: it listens to database changes and streams inserts, updates, and deletes to consumers.
+
+From my phone, I want to tell the OpenBot instance on my server:
+
+> On my work laptop, check whether Kaptanto is still streaming changes. If it stopped, show me the last error. Don't restart it without asking.
+
+That request exercises the whole feature. The conversation is on the server. The process and logs are on the laptop. Reading status might be allowed under that machine's rules. Restarting a process needs approval. The answer should come back to the same conversation, with the machine clearly identified.
+
+No VPN ceremony. No opening another chat on another install. No pasting logs from one bot into another.
+
+If that flow feels natural, the design is doing its job. If I need to explain a routing table before the demo starts, it isn't ready.
+
+## The Hard Part Is Trust
+
+The networking is real work, but the hard product question is trust.
+
+What happens if two paired installs claim the same name? What if a machine goes offline halfway through an action? What if the main instance believes an approval covers a command but the laptop's policy disagrees? What if a delegated task returns sensitive output that should not be retained in shared context?
+
+A distributed system gives you more failure modes. An agent gives those failure modes the ability to act.
+
+So the boring details become the feature: stable machine identity, explicit pairing, narrow permissions, visible approvals, honest offline states, and useful logs. None of that makes a flashy launch GIF. All of it determines whether I would leave this running on my own machines.
+
+## What I've Learned So Far
+
+I started with "one Bot should use several computers." The better framing is "one person should keep one conversation across several computers."
+
+That changes the design. The main Bot is not an all-powerful control plane. Each machine is not a disposable worker. The system works only if delegation preserves the user's intent and the machine's boundaries at the same time.
+
+There's still implementation work ahead, and I don't want to pretend a design document is a shipped feature. The issue is public, the foundations are merged, and the path is concrete: pairing, routing, per-machine policy, then shared context.
+
+Your agent shouldn't care which machine you're chatting from. It should care very much about which machine it's acting on.
+
+Questions? Drop them in the comments!
+
+Until next time!
