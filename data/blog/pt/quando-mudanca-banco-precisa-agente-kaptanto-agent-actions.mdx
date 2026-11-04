@@ -1,0 +1,144 @@
+---
+title: 'Quando uma Mudança no Banco Precisa de um Agente: Desenhando as Agent Actions do Kaptanto'
+date: '2026-11-03'
+language: pt
+tags: ['kaptanto', 'ai-agents', 'databases', 'cdc', 'golang', 'developer-tools']
+authors: ['lucas-andrade']
+draft: false
+summary: 'Um evento do banco pode disparar um webhook, mas algumas mudanças precisam de contexto, julgamento e uma decisão seguinte. Tenho trabalhado em uma action de agente de primeira classe para o Kaptanto, da montagem de contexto e idempotência aos limites de custo e roteamento do resultado.'
+images: ['/static/images/kaptanto_logo.png']
+---
+
+Uma linha muda no seu banco. Um webhook dispara. Seu serviço recebe o evento, monta um contexto, chama um SDK de agente, espera o modelo, parseia o resultado e decide o que fazer depois.
+
+Pare por um segundo. Por que a gente tá escrevendo esse mesmo serviço de novo e de novo?
+
+Eu trabalho no [Kaptanto](https://github.com/olucasandrade/kaptanto), minha ferramenta de Change Data Capture. Ele transforma mudanças do Postgres e do MongoDB em eventos duráveis e ordenados e manda esses eventos para outputs e actions. Quanto mais eu conectava esses eventos a workflows de IA, mais óbvia ficava a peça que faltava: às vezes o consumidor certo não é um webhook. É um agente.
+
+Tenho trabalhado no desenho de uma action `agent` de primeira classe. Isso aqui não é um anúncio de lançamento — esse tipo de action ainda não foi entregue. É o relato do desenho, das peças que o Kaptanto já tem e do porquê de "só chama o modelo" ser a menor parte do problema.
+
+## O Script de Cola que Todo Mundo Escreve
+
+O loop costuma começar inocente. Um pedido muda para `refund_requested`, e você quer que um agente inspecione o pedido, decida se precisa de uma pessoa e prepare o próximo passo.
+
+Então você se inscreve no evento. Depois busca os registros relacionados. Depois monta um prompt. Depois chama um SDK. E aí lida com timeouts, eventos duplicados, limites de tokens, output malformado e a action seguinte.
+
+Parabéns, seu trigger de banco agora vem com uma prova final de sistemas distribuídos (lmaooo).
+
+Eu mesmo escrevi uma versão desse loop na mão ao conectar o Kaptanto a um exemplo de webhook do OpenBot. Funcionou, e esse era exatamente o problema: a parte útil não era a chamada do webhook. Era tudo que vinha depois.
+
+Se cada usuário precisa reconstruir o mesmo serviço de orquestração, a integração não tá terminada.
+
+## O que uma Agent Action Deveria Significar
+
+A ideia é simples de falar:
+
+> Quando um evento der match, entrega o contexto certo para um agente, deixa ele fazer um trabalho limitado e roteia o resultado para algum lugar útil.
+
+O Kaptanto já sabe capturar o evento, persistir ele, comparar com regras de roteamento e invocar actions. Uma action `agent` estenderia esse caminho em vez de pedir pra você colocar outro serviço do lado.
+
+Uma config conceitual poderia ser assim:
+
+```yaml
+output: none
+
+actions:
+  - name: refund-triage
+    type: agent
+    match:
+      tables: ["public.orders"]
+      operations: ["update"]
+      where: "after.status = 'refund_requested'"
+    params:
+      model: ${AGENT_MODEL}
+      prompt: "Triage this refund request. Return structured output."
+      max-tokens: 2000
+      timeout: 45s
+      dry-run: false
+```
+
+Esse YAML é um rascunho de desenho, não uma interface estável. Por favor, não copia pra produção e depois vem bravo nos comentários.
+
+A parte importante é o contrato ao redor: qual contexto o agente recebe, quanto trabalho ele pode fazer, o que acontece quando o mesmo evento chega duas vezes e pra onde vai a decisão dele.
+
+## O Kaptanto Já Tem Peças Úteis
+
+Isso não começa num repositório vazio.
+
+O Kaptanto tem um servidor MCP opcional com API keys, regras de acesso por tabela, redação de dados, inscrições limitadas à sessão e chamadas auditadas. Um agente já consegue inspecionar schemas e consumir eventos recentes por uma interface controlada.
+
+Ele também tem um vector sink para embeddings e RAG, além de enriquecimento opcional com `ai_context`. O enricher pode anexar intenção, entidades e ações sugeridas antes do evento ficar durável. As falhas dele são fail-open: se o enriquecimento quebrar, o evento original continua preservado.
+
+E o sistema de actions já roteia eventos para Slack, Discord, endpoints HTTP, email, invalidação de cache, ferramentas de workflow, vector stores e funções serverless. OpenAPI e os SDKs tipados deixam esses contratos mais fáceis de consumir.
+
+Então a feature não é "ensinar o Kaptanto o que é IA". Isso já tá acontecendo. A feature é tornar o agente um participante de primeira classe no pipeline de actions.
+
+## Os Cinco Passos
+
+O plano em que tenho trabalhado tem cinco partes. Tô colocando em ordem de risco, porque as decisões perigosas não deveriam esperar até a demo ficar bonita.
+
+### 1. Definir o Contrato da Action
+
+Primeiro, a config e o ciclo de vida. Como uma action escolhe um modelo, quais parâmetros são segredos, o que uma execução retorna e como erros de configuração falham na inicialização.
+
+Isso parece chato porque é. Mas um contrato ruim de action vira backwards compatibility antes de você resolver as partes interessantes.
+
+A action precisa de um schema claro de entrada e saída. "O modelo falou um texto" não basta quando outra action precisa consumir o resultado.
+
+### 2. Montar Contexto e Lidar com Idempotência
+
+Um agente sem contexto é só um autocomplete caro.
+
+A execução precisa do evento, da regra que deu match, dos dados relacionados explicitamente permitidos e de qualquer `ai_context` disponível. Ela não deveria ganhar acesso irrestrito ao banco porque talvez o prompt ache isso conveniente.
+
+O Kaptanto já entrega idempotency keys determinísticas. Isso importa ainda mais aqui: a entrega de CDC é at-least-once, e uma execução de agente pode custar dinheiro ou causar efeitos colaterais. Repetir um evento não pode significar, em silêncio, "chama o modelo pago de novo e torce pelo melhor".
+
+Um registro durável da execução precisa conectar a chave do evento, a action, a tentativa e o resultado.
+
+### 3. Invocar o Agente com Limites de Verdade
+
+Toda execução precisa de timeout, orçamento de tokens ou custo, cancelamento e um modo dry-run.
+
+Dry-run não é um checkbox simpático. É como você testa um prompt contra formatos reais de evento sem deixar o agente disparar a action seguinte. Se o único jeito de testar sua config é executar a operação de verdade, eu construí a ferramenta errada.
+
+O output estruturado também precisa de validação. Se o modelo devolver algo fora do schema, isso é uma execução falha ou um retry limitado — não um contrato novo e criativo para os consumidores seguintes.
+
+### 4. Rotear o Resultado
+
+O resultado do agente deveria alimentar o sistema de actions existente. Uma decisão de triagem pode criar uma mensagem no Slack, chamar um endpoint HTTP, disparar um workflow ou parar com um "nenhuma ação necessária" registrado.
+
+É aqui que ser de primeira classe compensa. O usuário não deveria precisar de um segundo motor de roteamento só porque um agente produziu a decisão.
+
+E "nenhuma ação necessária" precisa ficar visível. Silêncio é uma interface péssima de debug.
+
+### 5. Entregar as Partes Operacionais Chatas
+
+Métricas, logs, redação de dados, registros de auditoria, exemplos, docs e estados de falha. O desfile inteiro.
+
+Para cada execução, eu deveria conseguir responder: qual evento disparou, qual contexto foi permitido, qual modelo rodou, quanto levou, quanto custou e qual action recebeu o resultado.
+
+Sem isso, você não tem um workflow autônomo. Tem um mistério com uma fatura de API.
+
+## A Parte Difícil Não É o Modelo
+
+Modelos travam. Providers aplicam rate limit. Eventos são reentregues. Prompts produzem bobagens confiantes. Uma execução pode estourar o orçamento depois de fazer algo útil, mas antes de devolver o resultado.
+
+Nenhum desses problemas desaparece porque o arquivo de config ficou elegante.
+
+O desenho precisa presumir falha e deixar o blast radius pequeno. Execuções limitadas. Contexto explícito. Deduplicação. Dry-run. Resultados auditáveis. Nada de retries escondidos que multiplicam o custo sem barulho.
+
+Também existe uma tentação de produto de deixar o agente fazer tudo. Eu não quero isso. Uma action normal é mais barata e previsível quando a regra é determinística. Usa um agente quando interpretação é o trabalho de verdade, não porque `if status = 'shipped'` tava esperando ser disruptado por IA.
+
+## O que Aprendi Até Aqui
+
+Eu comecei com "o Kaptanto deveria chamar um agente quando uma linha muda". O enquadramento melhor é "o Kaptanto deveria executar uma tarefa de agente limitada e auditável como parte de um pipeline de eventos".
+
+Isso muda o que importa. A chamada do SDK é fácil. Fronteiras de contexto, idempotência, orçamento, contratos de saída e roteamento do resultado são a feature.
+
+As peças que já existem deixam o caminho concreto: as actions fornecem o pipeline, o MCP fornece acesso controlado, o `ai_context` fornece enriquecimento e os sinks existentes dão um destino para o resultado. O trabalho restante é conectar isso sem fingir que agentes são webhooks determinísticos com marketing melhor.
+
+Uma mudança no banco deveria poder começar um workflow inteligente. Ela não deveria poder começar um workflow sem limites.
+
+Dúvidas? Deixa nos comentários!
+
+Até a próxima!

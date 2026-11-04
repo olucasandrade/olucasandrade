@@ -1,0 +1,144 @@
+---
+title: "When a Database Change Needs an Agent: Designing Kaptanto's Agent Actions"
+date: '2026-11-03'
+language: en
+tags: ['kaptanto', 'ai-agents', 'databases', 'cdc', 'golang', 'developer-tools']
+authors: ['lucas-andrade']
+draft: false
+summary: 'A database event can trigger a webhook, but some changes need context, judgment, and a follow-up decision. I have been working through a first-class agent action for Kaptanto, from context assembly and idempotency to budgets and outcome routing.'
+images: ['/static/images/kaptanto_logo.png']
+---
+
+A row changes in your database. A webhook fires. Your service receives the event, assembles some context, calls an agent SDK, waits for the model, parses the result, and decides what to do next.
+
+Stop for a second. Why are we writing that same service over and over again?
+
+I work on [Kaptanto](https://github.com/olucasandrade/kaptanto), my Change Data Capture tool. It turns Postgres and MongoDB changes into durable, ordered events and sends them to outputs and actions. The more I connected those events to AI workflows, the more obvious the missing piece became: sometimes the right consumer is not a webhook. It's an agent.
+
+I've been working through what a first-class `agent` action should look like. This is not a launch announcement — the action type is not shipped yet. It's the story of the design, the pieces Kaptanto already has, and why "just call the model" is the smallest part of the problem.
+
+## The Glue Script Everyone Writes
+
+The loop usually starts innocently. An order changes to `refund_requested`, and you want an agent to inspect the order, decide whether it needs a human, and draft the next step.
+
+So you subscribe to the event. Then you fetch related records. Then you build a prompt. Then you call an SDK. Then you handle timeouts, duplicate events, token limits, malformed output, and the follow-up action.
+
+Congratulations, your database trigger now has a distributed systems final exam attached to it (lmaooo).
+
+I hand-rolled a version of this loop myself while connecting Kaptanto to an OpenBot webhook example. It worked, and that was exactly the problem: the useful part was not the webhook call. It was everything after it.
+
+If every user needs to rebuild the same orchestration service, the integration is not finished.
+
+## What an Agent Action Should Mean
+
+The idea is simple to say:
+
+> When an event matches, give an agent the right context, let it do a bounded job, and route the outcome somewhere useful.
+
+Kaptanto already knows how to capture the event, persist it, match it against routing rules, and invoke actions. An `agent` action would extend that path instead of asking you to put another service beside it.
+
+A conceptual config could look like this:
+
+```yaml
+output: none
+
+actions:
+  - name: refund-triage
+    type: agent
+    match:
+      tables: ["public.orders"]
+      operations: ["update"]
+      where: "after.status = 'refund_requested'"
+    params:
+      model: ${AGENT_MODEL}
+      prompt: "Triage this refund request. Return structured output."
+      max-tokens: 2000
+      timeout: 45s
+      dry-run: false
+```
+
+That YAML is a design sketch, not a stable interface. Please don't copy it into production and then come angry to the comments.
+
+The important part is the contract around it: what context the agent receives, how much work it may do, what happens when the same event arrives twice, and where its decision goes.
+
+## Kaptanto Already Has Useful Pieces
+
+This is not starting from an empty repository.
+
+Kaptanto has an optional MCP server with API keys, table-level access rules, redaction, session-scoped subscriptions, and audited calls. An agent can already inspect schemas and consume recent events through a controlled interface.
+
+It also has a vector sink for embeddings and RAG, plus optional `ai_context` enrichment. The enricher can attach intent, entities, and suggested actions before the event becomes durable. Its failures are fail-open: if enrichment breaks, the original event still survives.
+
+And the action system already routes events to Slack, Discord, HTTP endpoints, email, cache invalidation, workflow tools, vector stores, and serverless functions. OpenAPI and the typed SDKs make those contracts easier to consume.
+
+So the feature is not "teach Kaptanto what AI is." That part is already happening. The feature is making the agent a first-class participant in the action pipeline.
+
+## The Five Steps
+
+The plan I'm working through has five parts. I'm putting them in risk order, because the dangerous decisions should not wait until the demo looks good.
+
+### 1. Define the Action Contract
+
+First, the config and lifecycle. How an action selects a model, which parameters are secrets, what a run returns, and how configuration errors fail at startup.
+
+This sounds boring because it is. But a bad action contract becomes backwards compatibility before you've solved the interesting parts.
+
+The action needs a clear input and output schema. "The model said some text" is not enough when another action needs to consume the result.
+
+### 2. Assemble Context and Handle Idempotency
+
+An agent without context is just an expensive autocomplete.
+
+The run needs the event, the matched rule, explicitly allowed related data, and any available `ai_context`. It should not get unrestricted database access because the prompt might find that convenient.
+
+Kaptanto already provides deterministic idempotency keys. That matters even more here: CDC delivery is at-least-once, and an agent run can cost money or cause side effects. Retrying an event cannot silently mean "call the paid model again and hope for the best."
+
+A durable run record needs to connect the event key, the action, the attempt, and the outcome.
+
+### 3. Invoke the Agent With Actual Boundaries
+
+Every run needs a timeout, a token or cost budget, cancellation, and a dry-run mode.
+
+Dry-run is not a nice checkbox. It's how you test a prompt against real event shapes without letting the agent trigger the follow-up action. If the only way to test your config is to perform the real operation, I built the wrong tool.
+
+Structured output also needs validation. If the model returns something outside the schema, that's a failed run or a bounded retry — not a creative new contract for downstream consumers.
+
+### 4. Route the Outcome
+
+The agent's result should feed the existing action system. A triage decision might create a Slack message, call an HTTP endpoint, trigger a workflow, or stop with a recorded "no action needed."
+
+This is where being first-class pays off. The user should not need a second routing engine just because an agent produced the decision.
+
+And "no action needed" has to be visible. Silence is a terrible debugging interface.
+
+### 5. Ship the Boring Operational Parts
+
+Metrics, logs, redaction, audit records, examples, docs, and failure states. The whole parade.
+
+For each run, I should be able to answer: which event triggered it, what context was allowed, which model ran, how long it took, what it cost, and which action received the result.
+
+Without that, you don't have an autonomous workflow. You have a mystery with an API bill.
+
+## The Hard Part Is Not the Model
+
+Models hang. Providers rate-limit you. Events get redelivered. Prompts produce confident nonsense. A run can exceed its budget after doing something useful but before returning the result.
+
+None of those problems disappear because the config file is elegant.
+
+The design has to assume failure and make the blast radius small. Bounded runs. Explicit context. Deduplication. Dry-run. Auditable outcomes. No hidden retries that quietly multiply cost.
+
+There's also a product temptation to let the agent do everything. I don't want that. A normal action is cheaper and more predictable when the rule is deterministic. Use an agent when interpretation is the actual job, not because `if status = 'shipped'` was waiting to be disrupted by AI.
+
+## What I've Learned So Far
+
+I started with "Kaptanto should call an agent when a row changes." The better framing is "Kaptanto should run a bounded, auditable agent task as part of an event pipeline."
+
+That changes what matters. The SDK call is easy. Context boundaries, idempotency, budgets, output contracts, and outcome routing are the feature.
+
+The pieces already on the table make the path concrete: actions provide the pipeline, MCP provides controlled access, `ai_context` provides enrichment, and the existing sinks provide somewhere for the result to go. The remaining work is connecting them without pretending agents are deterministic webhooks with better marketing.
+
+A database change should be able to start an intelligent workflow. It should not be able to start an unbounded one.
+
+Questions? Drop them in the comments!
+
+Until next time!
